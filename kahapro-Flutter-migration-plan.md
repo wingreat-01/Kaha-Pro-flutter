@@ -1,0 +1,134 @@
+# Kahapro → Flutter migration — project plan (updated)
+
+## Project
+Kahapro is a POS (point of sale) web app, originally a single `index.html`
+file (login gate, register/cart, inventory, admin panels, theming). Goal:
+rebuild it natively in Flutter so it runs as **one codebase for both a
+phone app (Android/iOS) and a web app**.
+
+"Kaha" is Tagalog for cash box/register — the visual identity leans into
+that directly (see Design system below).
+
+## Decisions made so far
+- **Not** a mechanical HTML→Flutter conversion — every screen is hand-built
+  in Dart. App **logic** carried over faithfully; **visual design** rebuilt
+  from scratch.
+- Target: both mobile and web from one Flutter codebase.
+- Workflow: no VS Code — user uploads files / works via chat with Claude,
+  who edits and hands back files to drop into the Flutter project locally.
+- State management: `provider` package (`ChangeNotifier`), via `MultiProvider`
+  wrapping the app in `main.dart`.
+- Flutter SDK installed on Windows at `Desktop\flutter`; project at
+  `Desktop\Desktop\kahapro_flutter` (note: nested `Desktop` folder per
+  terminal paths seen so far).
+
+## Design system (built, in use)
+Signature idea: the app looks and feels like an actual cash register /
+calculator.
+
+**Palette** — Charcoal `#1E2126` (base), Slate `#2A2E35` (surfaces),
+LED Amber `#FFB020` (primary accent), Till Green `#3FA796` (confirm),
+Ledger Red `#E4572E` (errors/voids), Paper cream `#F6F1E4` (receipts only).
+
+**Type** — IBM Plex Mono (numeric/display), Manrope (body/UI).
+
+**Signature element** — glowing amber monospace total readout
+(`LedTotal` widget), used in the cart panel; will reappear in the
+checkout modal (Pass C).
+
+## Migration phases — status
+
+- [x] **Phase 1 — foundation (superseded)**: project scaffold, theme
+      system, login screen — old look, rebuilt in 1.5.
+- [x] **Phase 1.5 — new design system**: charcoal/amber/mono theme and
+      login screen. Confirmed working.
+- [~] **Phase 2 — Register screen**: in progress, built in passes:
+  - [x] **Pass A** — category tabs + responsive product grid (2–5
+        columns by width), static mock data. Confirmed working after
+        home shell was correctly wired.
+  - [x] **Pass B** — cart wired via `CartProvider`, amber LED total,
+        qty +/- steppers, wide side panel vs. phone collapsed bottom
+        bar (expands to a drag-up sheet). Confirmed reaching the home
+        shell with cart bar visible; full interaction not yet
+        separately confirmed.
+  - [x] **Category navigation redesign** — replaced the horizontal
+        chip row with: left sidebar nav (icons + labels) on wide/web,
+        segmented underlined top tabs on phone. (Old `category_tabs.dart`
+        chip widget is now unused — safe to delete.)
+  - [x] **Customizable catalog** — `ProductProvider` (`ChangeNotifier`)
+        holds a mutable in-memory product list. "+" add-product tile
+        opens a dialog (name, price, category, optional emoji, new-category
+        support). "Edit / Done" toggle above the grid shows a delete X
+        badge on each card when active, with a confirm dialog before
+        removal. **Code delivered but not yet confirmed working** —
+        last report was the Edit toggle not appearing, most likely
+        because the updated files weren't fully saved before restart
+        (this has been a recurring issue this session — see note below).
+  - [ ] Checkout modal (**Pass C**) — payment entry, change calculation,
+        `LedTotal` reused prominently. Not started.
+- [ ] **Phase 3 — Transactions & Inventory panels**: day summary +
+      history, real inventory list/add/edit (would likely absorb/replace
+      the in-memory `ProductProvider` with persisted data). Not started.
+- [ ] **Phase 4 — Admin**: Users, Products, Categories managers. Not
+      started.
+- [ ] **Phase 5 — Polish**: animations (digit flip on total change),
+      further responsive tuning, real app icon, real authentication
+      (current login accepts any non-empty username/password — this is
+      intentional as a placeholder, not a bug). Not started.
+
+## Known recurring gotcha
+Several rounds this session where a file was re-sent by Claude but the
+**previous** version was still what ran, because the local save didn't
+fully take before a hot reload/restart. Hot restart (`R`) does not
+reliably re-run `main()` on the web-server target in particular. When
+something looks unchanged after pasting a file: (1) confirm the file
+actually contains the new content (search for a known new string/line),
+(2) fully quit (`q`) rather than hot-restart, (3) run `flutter run -d chrome`
+fresh. `flutter run -d chrome` has also failed to launch the browser at
+least once this session, silently falling back to `-d web-server`
+(different port each time) — worth watching for in terminal output.
+
+## Project structure (current, local)
+```
+Desktop/
+  flutter/                        ← Flutter SDK
+  Desktop/kahapro_flutter/        ← app project
+    lib/
+      main.dart                   ← MultiProvider(CartProvider, ProductProvider)
+      theme/app_theme.dart
+      state/
+        cart_provider.dart
+        product_provider.dart
+      models/
+        product.dart
+        cart_item.dart
+      data/
+        mock_products.dart        ← seed data for ProductProvider
+      screens/
+        login_screen.dart
+        home_shell.dart           ← embeds RegisterScreen
+        register_screen.dart
+      widgets/
+        category_sidebar.dart         (wide/web)
+        category_segmented_tabs.dart  (phone)
+        category_tabs.dart            (superseded, unused — safe to delete)
+        product_card.dart             (tap-to-add + edit-mode delete X)
+        add_product_card.dart         (dashed "+" tile)
+        add_product_dialog.dart       (add-product form)
+        cart_side_panel.dart          (wide/web)
+        cart_bottom_bar.dart          (phone, expands to sheet)
+        cart_list.dart                (shared qty-stepper list)
+        led_total.dart                (glowing amber total readout)
+    assets/logo.png
+    pubspec.yaml                  ← needs: provider, google_fonts
+```
+
+## Also deployed (separate, non-Flutter track)
+The original HTML `index.html` was set up as a ready-to-go Firebase
+Hosting project, independent of the Flutter migration.
+
+## How to resume
+Tell Claude: "continue the Kahapro Flutter migration — confirm the
+customizable catalog (add/delete products) is working, then start
+Pass C (checkout modal)." Upload this file at the start of a fresh
+conversation so context carries over.
