@@ -92,21 +92,31 @@ class _ProductCardState extends State<ProductCard> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (imageBytes != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.memory(
-                        imageBytes,
-                        width: 84,
-                        height: 84,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  else
-                    Text(
-                      product.emoji ?? '🛒',
-                      style: const TextStyle(fontSize: 46),
-                    ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final side = constraints.hasBoundedWidth
+                          ? (constraints.maxWidth * 0.72).clamp(56.0, 96.0)
+                          : 84.0;
+                      return SizedBox(
+                        width: side,
+                        height: side,
+                        child: imageBytes != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(side * 0.28),
+                                child: Image.memory(
+                                  imageBytes,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : Center(
+                                child: Text(
+                                  product.emoji ?? '🛒',
+                                  style: TextStyle(fontSize: side * 0.4),
+                                ),
+                              ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 34, // fixed slot for up to 2 lines — keeps emoji/name/price
