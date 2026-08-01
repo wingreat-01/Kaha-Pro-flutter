@@ -22,6 +22,7 @@ class ProductProvider extends ChangeNotifier {
     required double price,
     required String category,
     String? emoji,
+    Uint8List? imageBytes,
   }) {
     final id = 'p_${DateTime.now().microsecondsSinceEpoch}';
     _products.add(Product(
@@ -30,6 +31,7 @@ class ProductProvider extends ChangeNotifier {
       price: price,
       category: category,
       emoji: (emoji == null || emoji.trim().isEmpty) ? null : emoji.trim(),
+      imageBytes: imageBytes,
     ));
     notifyListeners();
   }

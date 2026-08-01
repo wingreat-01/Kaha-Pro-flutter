@@ -1,4 +1,8 @@
+import 'dart:collection';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 
 /// Form dialog for adding a new product. Returns the entered values
@@ -11,6 +15,7 @@ class AddProductDialog extends StatefulWidget {
     required double price,
     required String category,
     String? emoji,
+    Uint8List? imageBytes,
   }) onSubmit;
 
   const AddProductDialog({
@@ -33,14 +38,25 @@ class _AddProductDialogState extends State<AddProductDialog> {
   String? _selectedCategory;
   bool _addingNewCategory = false;
   String? _error;
+  Uint8List? _imageBytes;
+  bool _pickingImage = false;
+
+  // Deduped, order-preserving copy of widget.existingCategories.
+  // DropdownButtonFormField throws an assertion if its `value` isn't
+  // found in `items` exactly once — so both the value we pick AND the
+  // items list itself need to come from this same deduped source.
+  late final List<String> _categories;
 
   @override
   void initState() {
     super.initState();
-    final valid = widget.initialCategory != null && widget.initialCategory != 'All';
+    _categories = LinkedHashSet<String>.from(widget.existingCategories).toList();
+
+    final initial = widget.initialCategory;
+    final valid = initial != null && initial != 'All' && _categories.contains(initial);
     _selectedCategory = valid
-        ? widget.initialCategory
-        : (widget.existingCategories.isNotEmpty ? widget.existingCategories.first : null);
+        ? initial
+        : (_categories.isNotEmpty ? _categories.first : null);
     if (_selectedCategory == null) _addingNewCategory = true;
   }
 
@@ -51,6 +67,23 @@ class _AddProductDialogState extends State<AddProductDialog> {
     _emojiCtrl.dispose();
     _newCategoryCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    if (_pickingImage) return;
+    setState(() => _pickingImage = true);
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      setState(() => _imageBytes = bytes);
+    } finally {
+      if (mounted) setState(() => _pickingImage = false);
+    }
   }
 
   void _submit() {
@@ -77,6 +110,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
       price: price,
       category: category,
       emoji: _emojiCtrl.text,
+      imageBytes: _imageBytes,
     );
     Navigator.of(context).pop();
   }
@@ -104,18 +138,68 @@ class _AddProductDialogState extends State<AddProductDialog> {
               const SizedBox(height: 14),
               _field('Emoji (optional)', _emojiCtrl, hint: '🛒'),
               const SizedBox(height: 14),
+              Text('Photo (optional)', style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.charcoal,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withOpacity(0.15)),
+                      ),
+                      child: _pickingImage
+                          ? const Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ledAmber),
+                              ),
+                            )
+                          : (_imageBytes != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: Image.memory(_imageBytes!, fit: BoxFit.cover),
+                                )
+                              : Icon(Icons.add_a_photo_outlined, color: AppColors.textMuted, size: 20)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _imageBytes != null
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: () => setState(() => _imageBytes = null),
+                              child: Text('Remove photo', style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed)),
+                            ),
+                          )
+                        : Text(
+                            'Overrides the emoji placeholder',
+                            style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
+                          ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
               Text('Category', style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1)),
               const SizedBox(height: 6),
-              if (!_addingNewCategory && widget.existingCategories.isNotEmpty)
+              if (!_addingNewCategory && _categories.isNotEmpty)
                 Row(
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _selectedCategory,
+                        value: _selectedCategory != null && _categories.contains(_selectedCategory)
+                            ? _selectedCategory
+                            : null,
                         dropdownColor: AppColors.slate,
                         style: AppTextStyles.body(size: 14),
                         decoration: const InputDecoration(),
-                        items: widget.existingCategories
+                        items: _categories
                             .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                             .toList(),
                         onChanged: (value) => setState(() => _selectedCategory = value),
@@ -131,7 +215,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 Row(
                   children: [
                     Expanded(child: _field('', _newCategoryCtrl, hint: 'New category name')),
-                    if (widget.existingCategories.isNotEmpty)
+                    if (_categories.isNotEmpty)
                       TextButton(
                         onPressed: () => setState(() => _addingNewCategory = false),
                         child: Text('Pick existing', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),

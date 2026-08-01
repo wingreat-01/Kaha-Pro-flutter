@@ -94,18 +94,18 @@ class _ProductCardState extends State<ProductCard> {
                 children: [
                   if (imageBytes != null)
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(14),
                       child: Image.memory(
                         imageBytes,
-                        width: 52,
-                        height: 52,
+                        width: 84,
+                        height: 84,
                         fit: BoxFit.cover,
                       ),
                     )
                   else
                     Text(
                       product.emoji ?? '🛒',
-                      style: const TextStyle(fontSize: 34),
+                      style: const TextStyle(fontSize: 46),
                     ),
                   const SizedBox(height: 12),
                   SizedBox(

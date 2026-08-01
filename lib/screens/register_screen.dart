@@ -50,6 +50,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     'Settings',
   ];
 
+  // Tabs in _categoryTabs that are navigation destinations, not product
+  // categories — never treat these as a category a product could belong to.
+  static const Set<String> _nonCategoryTabs = {'All', 'Transactions', 'Users', 'Settings'};
+
+  // The set of "known" category names: tabs we show nav-wise as categories,
+  // whether or not any product currently has that category yet (e.g. a
+  // freshly-added tab like "Add Ons" with zero products still counts).
+  List<String> _knownCategories(ProductProvider catalog) {
+    final fromProducts = catalog.categories.where((c) => c != 'All');
+    final fromTabs = _categoryTabs.where((t) => !_nonCategoryTabs.contains(t));
+    return {...fromProducts, ...fromTabs}.toList()..sort();
+  }
+
   List<Product> _filtered(ProductProvider catalog) {
     if (_selectedCategory == 'All') return catalog.products;
     return catalog.products.where((p) => p.category == _selectedCategory).toList();
@@ -70,14 +83,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _openAddProductDialog(BuildContext context, ProductProvider catalog) {
-    final existing = catalog.categories.where((c) => c != 'All').toList();
+    final existing = _knownCategories(catalog);
     showDialog(
       context: context,
       builder: (_) => AddProductDialog(
         existingCategories: existing,
         initialCategory: _selectedCategory,
-        onSubmit: ({required name, required price, required category, emoji}) {
-          catalog.addProduct(name: name, price: price, category: category, emoji: emoji);
+        onSubmit: ({required name, required price, required category, emoji, imageBytes}) {
+          catalog.addProduct(name: name, price: price, category: category, emoji: emoji, imageBytes: imageBytes);
         },
       ),
     );
@@ -159,7 +172,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisCount: crossAxisCount,
               crossAxisSpacing: 14,
               mainAxisSpacing: 18,
-              childAspectRatio: 0.86,
+              childAspectRatio: 0.78,
             ),
             itemBuilder: (context, index) {
               if (index == products.length) {
