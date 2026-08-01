@@ -33,8 +33,9 @@ Ledger Red `#E4572E` (errors/voids), Paper cream `#F6F1E4` (receipts only).
 **Type** — IBM Plex Mono (numeric/display), Manrope (body/UI).
 
 **Signature element** — glowing amber monospace total readout
-(`LedTotal` widget), used in the cart panel; will reappear in the
-checkout modal (Pass C).
+(`LedTotal` widget), used in the cart panel, the Pass C checkout
+modal (TOTAL DUE / CHANGE), and the transaction detail view
+(TOTAL / TENDERED / CHANGE).
 
 ## Migration phases — status
 
@@ -60,15 +61,71 @@ checkout modal (Pass C).
         opens a dialog (name, price, category, optional emoji, new-category
         support). "Edit / Done" toggle above the grid shows a delete X
         badge on each card when active, with a confirm dialog before
-        removal. **Code delivered but not yet confirmed working** —
-        last report was the Edit toggle not appearing, most likely
-        because the updated files weren't fully saved before restart
-        (this has been a recurring issue this session — see note below).
-  - [ ] Checkout modal (**Pass C**) — payment entry, change calculation,
-        `LedTotal` reused prominently. Not started.
-- [ ] **Phase 3 — Transactions & Inventory panels**: day summary +
-      history, real inventory list/add/edit (would likely absorb/replace
-      the in-memory `ProductProvider` with persisted data). Not started.
+        removal. **Code delivered but STILL not confirmed working
+        end-to-end** — last report was the Edit toggle not appearing,
+        most likely because the updated files weren't fully saved
+        before restart (recurring issue — see note below). Deliberately
+        deferred again this session in favor of closing out Pass C
+        first (decision: finish Pass C, then Phase 3 — see below).
+  - [x] **Card sizing/uniformity pass** — product grid cards made
+        consistent size.
+  - [x] **Phone tab bar rework** — maximized to show 4 tabs, added
+        scroll/swipe, added desktop mouse-drag support for the same
+        tab bar.
+  - [x] **Fixed placeholder tab list** — replaced earlier ad-hoc tab
+        source with a fixed list.
+  - [x] **Cart line-item removal** — added `_RemoveButton` (✕) at the
+        end of each cart row in `cart_list.dart`, wired to
+        `cart.remove(item.product.id)`; deletes the line entirely
+        (distinct from the −/+ qty stepper). Shared by `CartList`, so
+        it works in both the wide side panel and the phone bottom
+        sheet automatically.
+  - [x] **`ListenableBuilder` fix** — phone bottom sheet now reflects
+        cart changes (incl. the new remove button) live instead of
+        going stale.
+  - [x] Checkout modal (**Pass C**) — payment entry, change calculation,
+        `LedTotal` reused prominently (TOTAL DUE amber, CHANGE in Till
+        Green). Built as `checkout_modal.dart`, opened via
+        `CheckoutModal.show(context, cart, onComplete)` from
+        `_onCheckout` in `register_screen.dart` — that call site and
+        the `onCheckout` wiring in `cart_side_panel.dart` /
+        `cart_bottom_bar.dart` were already in place, just waiting on
+        the modal file. Confirm button validates tendered ≥ total
+        (inline red error if short), then logs a transaction (see
+        Transactions below) and clears the cart.
+        **Quick-amount chip rule**:
+        - At/under ₱1000 (largest common peso bill): chips are actual
+          bill values (₱50/₱100/₱500/₱1000), filtered to only those
+          that alone cover the total, labeled `+₱__`, and *additive*
+          (tapping stacks bills onto whatever's already entered).
+        - Above ₱1000: no single bill covers it, so chips switch to
+          computed round-up targets — next ₱50, next ₱100, next ₱500
+          above the total, de-duplicated — labeled `₱__` (no `+`) and
+          tapping *sets* the field directly rather than adding.
+          Confirmed pattern (e.g. ₱1043 → ₱1050/₱1100/₱1500; ₱1083 →
+          ₱1100/₱1500; ₱1540 → ₱1550/₱1600/₱2000).
+- [~] **Phase 3 — Transactions & Inventory panels**: in progress.
+  - [x] **Transaction logging + Transactions tab** — `Transaction` /
+        `TransactionLineItem` models (`lib/models/transaction.dart`)
+        snapshot each cart line at sale time (name/price/qty/category
+        copied out, not referenced, so later catalog edits/deletes
+        never retroactively change a past sale's record).
+        `TransactionProvider` (`ChangeNotifier`, registered in
+        `main.dart`'s `MultiProvider`) logs one entry per confirmed
+        checkout with a ledger-style number (`#00001`, `#00002`, …),
+        timestamp, line items, total, cash tendered, and change.
+        `checkout_modal.dart`'s confirm step records the transaction
+        before clearing the cart. The **Transactions tab** in
+        `register_screen.dart` now swaps in `transactions_panel.dart`
+        (list, newest first, no add-product tile / no Edit toggle —
+        those only apply to the catalog grid) instead of the product
+        grid; tapping a row opens `transaction_detail_modal.dart`
+        with the full line-item breakdown and totals.
+  - [ ] Day summary / history rollups (totals by day, etc.) — not
+        started.
+  - [ ] Real inventory list/add/edit panel — not started; would
+        likely absorb/replace the in-memory `ProductProvider` with
+        persisted data.
 - [ ] **Phase 4 — Admin**: Users, Products, Categories managers. Not
       started.
 - [ ] **Phase 5 — Polish**: animations (digit flip on total change),
@@ -94,14 +151,16 @@ Desktop/
   flutter/                        ← Flutter SDK
   Desktop/kahapro_flutter/        ← app project
     lib/
-      main.dart                   ← MultiProvider(CartProvider, ProductProvider)
+      main.dart                   ← MultiProvider(CartProvider, ProductProvider, TransactionProvider)
       theme/app_theme.dart
       state/
         cart_provider.dart
         product_provider.dart
+        transaction_provider.dart ← logs completed sales, ledger-style numbering
       models/
         product.dart
         cart_item.dart
+        transaction.dart          ← Transaction + TransactionLineItem (immutable snapshot)
       data/
         mock_products.dart        ← seed data for ProductProvider
       screens/
@@ -117,8 +176,11 @@ Desktop/
         add_product_dialog.dart       (add-product form)
         cart_side_panel.dart          (wide/web)
         cart_bottom_bar.dart          (phone, expands to sheet)
-        cart_list.dart                (shared qty-stepper list)
+        cart_list.dart                (shared qty-stepper list, incl. ✕ remove)
         led_total.dart                (glowing amber total readout)
+        checkout_modal.dart           (Pass C: cash entry, quick chips, change calc)
+        transactions_panel.dart       (Transactions tab list)
+        transaction_detail_modal.dart (tap a transaction row for detail)
     assets/logo.png
     pubspec.yaml                  ← needs: provider, google_fonts
 ```
@@ -127,8 +189,30 @@ Desktop/
 The original HTML `index.html` was set up as a ready-to-go Firebase
 Hosting project, independent of the Flutter migration.
 
+## Planned — Supabase integration (auth, database, storage)
+Not started. Everything currently in the Flutter app is in-memory only
+(`ProductProvider`, `CartProvider`, `TransactionProvider` all lose state
+on restart) — Supabase is intended to replace that with real persistence:
+- **Authentication** — replace the current placeholder login (accepts
+  any non-empty username/password) with real Supabase Auth. Ties into
+  Phase 5's "real authentication" item and Phase 4's Users admin panel.
+- **Database** — persist products/catalog, cart/transactions, and users
+  in Supabase (Postgres) instead of the in-memory providers. This is
+  the natural backing store for Phase 3's inventory panel and
+  transaction history, and Phase 4's admin managers.
+- **Storage** — Supabase Storage for product images/assets (currently
+  just an optional emoji per product) and possibly receipt/export
+  files down the line.
+
+No decisions yet on schema, RLS policies, or how far to go before
+wiring each provider to Supabase vs. keeping them in-memory for now —
+to be worked out when this track starts.
+
 ## How to resume
 Tell Claude: "continue the Kahapro Flutter migration — confirm the
-customizable catalog (add/delete products) is working, then start
-Pass C (checkout modal)." Upload this file at the start of a fresh
-conversation so context carries over.
+customizable catalog (add/delete products) is working end-to-end,
+then start the Supabase integration (auth, database, storage)." If
+picking a smaller next step instead, Phase 3's remaining pieces (day
+summary/history rollups, real inventory list/add/edit) or Phase 4
+(Admin: Users, Products, Categories) are also open. Upload this file
+at the start of a fresh conversation so context carries over.

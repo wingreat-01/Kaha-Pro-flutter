@@ -8,16 +8,19 @@ class LedTotal extends StatelessWidget {
   final double amount;
   final String label;
   final double fontSize;
+  final Color? color;
 
   const LedTotal({
     super.key,
     required this.amount,
     this.label = 'TOTAL',
     this.fontSize = 32,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final displayColor = color ?? AppColors.ledAmber;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -44,11 +47,11 @@ class LedTotal extends StatelessWidget {
             style: AppTextStyles.mono(
               size: fontSize,
               weight: FontWeight.w700,
-              color: AppColors.ledAmber,
+              color: displayColor,
             ).copyWith(
               shadows: [
-                Shadow(color: AppColors.ledAmber.withOpacity(0.65), blurRadius: 16),
-                Shadow(color: AppColors.ledAmber.withOpacity(0.35), blurRadius: 32),
+                Shadow(color: displayColor.withOpacity(0.65), blurRadius: 16),
+                Shadow(color: displayColor.withOpacity(0.35), blurRadius: 32),
               ],
             ),
           ),

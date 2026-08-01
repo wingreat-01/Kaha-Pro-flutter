@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../data/mock_products.dart';
 import '../models/product.dart';
@@ -35,6 +36,16 @@ class ProductProvider extends ChangeNotifier {
 
   void removeProduct(String id) {
     _products.removeWhere((p) => p.id == id);
+    notifyListeners();
+  }
+
+  /// Replaces a product's photo with the given bytes (from the image
+  /// picker). Pass null to clear a custom photo and fall back to the
+  /// emoji placeholder again.
+  void updateProductImage(String id, Uint8List? imageBytes) {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index < 0) return;
+    _products[index] = _products[index].copyWith(imageBytes: imageBytes);
     notifyListeners();
   }
 }

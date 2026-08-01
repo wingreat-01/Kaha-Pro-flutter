@@ -24,68 +24,73 @@ class CartBottomBar extends StatelessWidget {
           maxChildSize: 0.9,
           expand: false,
           builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: AppColors.slate,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.slateBorder,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+            return ListenableBuilder(
+              listenable: cart,
+              builder: (context, _) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.slate,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Row(
-                      children: [
-                        Text('CURRENT ORDER',
-                            style: AppTextStyles.mono(
-                                size: 12, weight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.5)),
-                        const Spacer(),
-                        if (!cart.isEmpty)
-                          TextButton(
-                            onPressed: cart.clear,
-                            child: Text('Clear', style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed)),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: CartList(cart: cart),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        LedTotal(amount: cart.total),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: cart.isEmpty
-                                ? null
-                                : () {
-                                    Navigator.of(context).pop();
-                                    onCheckout();
-                                  },
-                            child: const Text('Checkout'),
-                          ),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.slateBorder,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                      ],
-                    ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          children: [
+                            Text('CURRENT ORDER',
+                                style: AppTextStyles.mono(
+                                    size: 12, weight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.5)),
+                            const Spacer(),
+                            if (!cart.isEmpty)
+                              TextButton(
+                                onPressed: cart.clear,
+                                child: Text('Clear', style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: CartList(cart: cart),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            LedTotal(amount: cart.total),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: cart.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.of(context).pop();
+                                        onCheckout();
+                                      },
+                                child: const Text('Checkout'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             );
           },
         );

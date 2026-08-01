@@ -1,15 +1,20 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 
 /// A single product "key" in the register grid.
 /// Depresses on tap like a real register/calculator button.
-/// In edit mode, shows a delete X badge instead of responding to tap-to-add.
+/// In edit mode, shows a delete X badge and a camera badge (to
+/// upload/replace the product photo) instead of responding to
+/// tap-to-add.
 class ProductCard extends StatefulWidget {
   final Product product;
   final VoidCallback onTap;
   final bool isEditMode;
   final VoidCallback? onDelete;
+  final ValueChanged<Uint8List>? onImageSelected;
 
   const ProductCard({
     super.key,
@@ -17,6 +22,7 @@ class ProductCard extends StatefulWidget {
     required this.onTap,
     this.isEditMode = false,
     this.onDelete,
+    this.onImageSelected,
   });
 
   @override
@@ -25,10 +31,30 @@ class ProductCard extends StatefulWidget {
 
 class _ProductCardState extends State<ProductCard> {
   bool _pressed = false;
+  bool _picking = false;
+
+  Future<void> _pickImage() async {
+    if (_picking) return;
+    setState(() => _picking = true);
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      widget.onImageSelected?.call(bytes);
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
+    final imageBytes = product.imageBytes;
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -66,10 +92,21 @@ class _ProductCardState extends State<ProductCard> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    product.emoji ?? '🛒',
-                    style: const TextStyle(fontSize: 34),
-                  ),
+                  if (imageBytes != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.memory(
+                        imageBytes,
+                        width: 52,
+                        height: 52,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  else
+                    Text(
+                      product.emoji ?? '🛒',
+                      style: const TextStyle(fontSize: 34),
+                    ),
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 34, // fixed slot for up to 2 lines — keeps emoji/name/price
@@ -118,6 +155,32 @@ class _ProductCardState extends State<ProductCard> {
                   border: Border.all(color: AppColors.charcoal, width: 2),
                 ),
                 child: const Icon(Icons.close, color: Colors.white, size: 15),
+              ),
+            ),
+          ),
+        if (widget.isEditMode)
+          Positioned(
+            bottom: -8,
+            right: -8,
+            child: GestureDetector(
+              onTap: _pickImage,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppColors.ledAmber,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.charcoal, width: 2),
+                ),
+                child: _picking
+                    ? const Padding(
+                        padding: EdgeInsets.all(5),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF3A2600),
+                        ),
+                      )
+                    : const Icon(Icons.photo_camera, color: Color(0xFF3A2600), size: 14),
               ),
             ),
           ),

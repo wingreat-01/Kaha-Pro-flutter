@@ -62,9 +62,27 @@ class CartList extends StatelessWidget {
                 style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber),
               ),
             ),
+            _RemoveButton(onTap: () => cart.remove(item.product.id)),
           ],
         );
       },
+    );
+  }
+}
+
+class _RemoveButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RemoveButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Icon(Icons.close, size: 16, color: AppColors.textMuted),
+      ),
     );
   }
 }

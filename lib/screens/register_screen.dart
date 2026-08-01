@@ -11,10 +11,14 @@ import '../widgets/add_product_card.dart';
 import '../widgets/add_product_dialog.dart';
 import '../widgets/cart_side_panel.dart';
 import '../widgets/cart_bottom_bar.dart';
+import '../widgets/checkout_modal.dart';
+import '../widgets/transactions_panel.dart';
 
-/// Phase 2 — Pass B: cart wired via CartProvider, amber LED total,
-/// dashboard-style category navigation, and a customizable catalog
-/// (add products via a dialog, delete via an edit-mode toggle).
+/// Phase 2 — Pass B + C: cart wired via CartProvider, amber LED total,
+/// dashboard-style category navigation, a customizable catalog (add
+/// products via a dialog, delete via an edit-mode toggle), a checkout
+/// modal (cash tendered, live change calc, complete sale), and a
+/// Transactions tab that lists every logged sale.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -30,22 +34,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
   static const double _sidebarWidth = 200;
   static const double _cartPanelWidth = 320;
 
+  // Fixed top-level tabs. "All" / "Main" / "Add Ons" / "Drinks" filter the
+  // product grid like before. "Transactions" shows the logged sales list
+  // instead of the product grid (see _buildMainContent). "Users" /
+  // "Settings" are still placeholders for now — they show in the bar and
+  // are tappable, but don't navigate anywhere yet (Phase 4 in the
+  // migration plan).
+  static const List<String> _categoryTabs = [
+    'All',
+    'Main',
+    'Add Ons',
+    'Drinks',
+    'Transactions',
+    'Users',
+    'Settings',
+  ];
+
   List<Product> _filtered(ProductProvider catalog) {
     if (_selectedCategory == 'All') return catalog.products;
     return catalog.products.where((p) => p.category == _selectedCategory).toList();
   }
 
-  void _onCheckout(BuildContext context) {
-    // Checkout modal is Pass C — placeholder confirmation for now.
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.slate,
-        content: Text(
-          'Checkout modal coming in Pass C',
-          style: AppTextStyles.body(size: 13, color: AppColors.ledAmber),
+  void _onCheckout(BuildContext context, CartProvider cart) {
+    CheckoutModal.show(context, cart, () {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.slate,
+          content: Text(
+            'Sale completed',
+            style: AppTextStyles.body(size: 13, color: AppColors.tillGreen),
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   void _openAddProductDialog(BuildContext context, ProductProvider catalog) {
@@ -150,12 +171,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 isEditMode: _editMode,
                 onTap: () => cart.add(product),
                 onDelete: () => _confirmDelete(context, catalog, product),
+                onImageSelected: (bytes) => catalog.updateProductImage(product.id, bytes),
               );
             },
           ),
         ),
       ],
     );
+  }
+
+  /// Swaps in the Transactions list for that tab (no add-product tile,
+  /// no Edit toggle — those only apply to the catalog grid); every other
+  /// tab still shows the filtered product grid.
+  Widget _buildMainContent(BuildContext context, CartProvider cart, ProductProvider catalog, double contentWidth) {
+    if (_selectedCategory == 'Transactions') {
+      return const TransactionsPanel();
+    }
+    return _buildGrid(context, cart, catalog, contentWidth);
   }
 
   @override
@@ -168,16 +200,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final isWide = constraints.maxWidth >= _wideBreakpoint;
 
         if (isWide) {
-          final gridWidth = constraints.maxWidth - _sidebarWidth - _cartPanelWidth;
+          final contentWidth = constraints.maxWidth - _sidebarWidth - _cartPanelWidth;
           return Row(
             children: [
               CategorySidebar(
-                categories: catalog.categories,
+                categories: _categoryTabs,
                 selected: _selectedCategory,
                 onSelected: (category) => setState(() => _selectedCategory = category),
               ),
-              Expanded(child: _buildGrid(context, cart, catalog, gridWidth)),
-              CartSidePanel(cart: cart, onCheckout: () => _onCheckout(context)),
+              Expanded(child: _buildMainContent(context, cart, catalog, contentWidth)),
+              CartSidePanel(cart: cart, onCheckout: () => _onCheckout(context, cart)),
             ],
           );
         }
@@ -185,12 +217,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return Column(
           children: [
             CategorySegmentedTabs(
-              categories: catalog.categories,
+              categories: _categoryTabs,
               selected: _selectedCategory,
               onSelected: (category) => setState(() => _selectedCategory = category),
             ),
-            Expanded(child: _buildGrid(context, cart, catalog, constraints.maxWidth)),
-            CartBottomBar(cart: cart, onCheckout: () => _onCheckout(context)),
+            Expanded(child: _buildMainContent(context, cart, catalog, constraints.maxWidth)),
+            CartBottomBar(cart: cart, onCheckout: () => _onCheckout(context, cart)),
           ],
         );
       },
