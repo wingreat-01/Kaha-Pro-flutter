@@ -53,3 +53,18 @@ class Transaction {
 
   int get itemCount => items.fold(0, (sum, item) => sum + item.quantity);
 }
+
+/// Aggregated rollup of every transaction on one calendar day. `day` is
+/// truncated to just year/month/day (no time component) so it can be
+/// used as a stable grouping key. `transactions` keeps the same
+/// newest-first order as TransactionProvider.transactions.
+class DaySummary {
+  final DateTime day;
+  final List<Transaction> transactions;
+
+  const DaySummary({required this.day, required this.transactions});
+
+  double get totalRevenue => transactions.fold(0.0, (sum, t) => sum + t.total);
+  int get saleCount => transactions.length;
+  int get itemsSold => transactions.fold(0, (sum, t) => sum + t.itemCount);
+}

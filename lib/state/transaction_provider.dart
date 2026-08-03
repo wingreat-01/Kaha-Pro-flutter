@@ -14,6 +14,19 @@ class TransactionProvider extends ChangeNotifier {
 
   bool get isEmpty => _transactions.isEmpty;
 
+  /// All transactions grouped by calendar day, newest day first (each
+  /// day's own transactions are also newest first, since `transactions`
+  /// already is — Dart's Map preserves insertion order, so no extra
+  /// sort is needed here).
+  List<DaySummary> get dailySummaries {
+    final Map<DateTime, List<Transaction>> grouped = {};
+    for (final txn in transactions) {
+      final day = DateTime(txn.timestamp.year, txn.timestamp.month, txn.timestamp.day);
+      grouped.putIfAbsent(day, () => []).add(txn);
+    }
+    return grouped.entries.map((e) => DaySummary(day: e.key, transactions: e.value)).toList();
+  }
+
   /// Records a completed sale. Call this with the cart's items BEFORE
   /// clearing the cart, so quantities are still intact.
   Transaction record({

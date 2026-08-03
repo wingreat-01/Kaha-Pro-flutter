@@ -13,9 +13,9 @@ class TransactionsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final transactions = context.watch<TransactionProvider>().transactions;
+    final summaries = context.watch<TransactionProvider>().dailySummaries;
 
-    if (transactions.isEmpty) {
+    if (summaries.isEmpty) {
       return Center(
         child: Text(
           'No transactions yet',
@@ -24,21 +24,90 @@ class TransactionsPanel extends StatelessWidget {
       );
     }
 
-    return ListView.separated(
+    return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: transactions.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemCount: summaries.length,
       itemBuilder: (context, index) {
-        final txn = transactions[index];
-        return _TransactionRow(
-          transaction: txn,
-          onTap: () => showDialog(
-            context: context,
-            barrierColor: Colors.black54,
-            builder: (_) => TransactionDetailModal(transaction: txn),
+        final day = summaries[index];
+        final isLast = index == summaries.length - 1;
+        return Padding(
+          padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DaySummaryHeader(summary: day),
+              const SizedBox(height: 10),
+              for (final txn in day.transactions)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _TransactionRow(
+                    transaction: txn,
+                    onTap: () => showDialog(
+                      context: context,
+                      barrierColor: Colors.black54,
+                      builder: (_) => TransactionDetailModal(transaction: txn),
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },
+    );
+  }
+}
+
+class _DaySummaryHeader extends StatelessWidget {
+  final DaySummary summary;
+
+  const _DaySummaryHeader({required this.summary});
+
+  static const _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  String _label(DateTime day) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (day == today) return 'Today';
+    if (day == yesterday) return 'Yesterday';
+    return '${_months[day.month - 1]} ${day.day}, ${day.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Text(
+                _label(summary.day),
+                style: AppTextStyles.mono(
+                  size: 12.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+            Text(
+              '${summary.saleCount} sale${summary.saleCount == 1 ? '' : 's'} · ${summary.itemsSold} item${summary.itemsSold == 1 ? '' : 's'}  ',
+              style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+            ),
+            Text(
+              '₱${summary.totalRevenue.toStringAsFixed(2)}',
+              style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(height: 1, color: AppColors.slateBorder),
+      ],
     );
   }
 }
