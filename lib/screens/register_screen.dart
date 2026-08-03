@@ -12,13 +12,16 @@ import '../widgets/add_product_dialog.dart';
 import '../widgets/cart_side_panel.dart';
 import '../widgets/cart_bottom_bar.dart';
 import '../widgets/checkout_modal.dart';
-import '../widgets/transactions_panel.dart';
 
 /// Phase 2 — Pass B + C: cart wired via CartProvider, amber LED total,
 /// dashboard-style category navigation, a customizable catalog (add
-/// products via a dialog, delete via an edit-mode toggle), a checkout
-/// modal (cash tendered, live change calc, complete sale), and a
-/// Transactions tab that lists every logged sale.
+/// products via a dialog, delete via an edit-mode toggle), and a
+/// checkout modal (cash tendered, live change calc, complete sale).
+///
+/// Transactions / Users / Settings are no longer part of this screen's
+/// tabs — they moved up to HomeShell (Transactions + Settings as header
+/// icons, Users nested inside Settings). This screen now only ever
+/// shows the product grid, filtered by real category.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -34,25 +37,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   static const double _sidebarWidth = 200;
   static const double _cartPanelWidth = 320;
 
-  // Fixed top-level tabs. "All" / "Main" / "Add Ons" / "Drinks" filter the
-  // product grid like before. "Transactions" shows the logged sales list
-  // instead of the product grid (see _buildMainContent). "Users" /
-  // "Settings" are still placeholders for now — they show in the bar and
-  // are tappable, but don't navigate anywhere yet (Phase 4 in the
-  // migration plan).
+  // Real product-category tabs only. Transactions/Users/Settings used to
+  // live here too, which both overflowed the phone tab bar and mixed nav
+  // concerns with category filtering — they're header icons now.
   static const List<String> _categoryTabs = [
     'All',
     'Main',
     'Add Ons',
     'Drinks',
-    'Transactions',
-    'Users',
-    'Settings',
   ];
 
-  // Tabs in _categoryTabs that are navigation destinations, not product
-  // categories — never treat these as a category a product could belong to.
-  static const Set<String> _nonCategoryTabs = {'All', 'Transactions', 'Users', 'Settings'};
+  // "All" is the only tab that isn't a real product category.
+  static const Set<String> _nonCategoryTabs = {'All'};
 
   // The set of "known" category names: tabs we show nav-wise as categories,
   // whether or not any product currently has that category yet (e.g. a
@@ -193,16 +189,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  /// Swaps in the Transactions list for that tab (no add-product tile,
-  /// no Edit toggle — those only apply to the catalog grid); every other
-  /// tab still shows the filtered product grid.
-  Widget _buildMainContent(BuildContext context, CartProvider cart, ProductProvider catalog, double contentWidth) {
-    if (_selectedCategory == 'Transactions') {
-      return const TransactionsPanel();
-    }
-    return _buildGrid(context, cart, catalog, contentWidth);
-  }
-
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartProvider>();
@@ -221,7 +207,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 selected: _selectedCategory,
                 onSelected: (category) => setState(() => _selectedCategory = category),
               ),
-              Expanded(child: _buildMainContent(context, cart, catalog, contentWidth)),
+              Expanded(child: _buildGrid(context, cart, catalog, contentWidth)),
               CartSidePanel(cart: cart, onCheckout: () => _onCheckout(context, cart)),
             ],
           );
@@ -234,7 +220,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               selected: _selectedCategory,
               onSelected: (category) => setState(() => _selectedCategory = category),
             ),
-            Expanded(child: _buildMainContent(context, cart, catalog, constraints.maxWidth)),
+            Expanded(child: _buildGrid(context, cart, catalog, constraints.maxWidth)),
             CartBottomBar(cart: cart, onCheckout: () => _onCheckout(context, cart)),
           ],
         );
