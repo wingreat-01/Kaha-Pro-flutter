@@ -8,51 +8,173 @@ import 'transaction_detail_modal.dart';
 /// Content shown for the "Transactions" tab: every completed sale,
 /// newest first, logged automatically by TransactionProvider when
 /// checkout is confirmed. Tapping a row opens the full line-item detail.
-class TransactionsPanel extends StatelessWidget {
+/// A calendar button lets the user jump straight to a specific day
+/// instead of scrolling through history.
+class TransactionsPanel extends StatefulWidget {
   const TransactionsPanel({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final summaries = context.watch<TransactionProvider>().dailySummaries;
+  State<TransactionsPanel> createState() => _TransactionsPanelState();
+}
 
-    if (summaries.isEmpty) {
-      return Center(
-        child: Text(
-          'No transactions yet',
-          style: AppTextStyles.body(size: 13, color: AppColors.textMuted),
-        ),
-      );
-    }
+class _TransactionsPanelState extends State<TransactionsPanel> {
+  // null = no filter, show every day's summary + transactions.
+  DateTime? _filterDate;
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: summaries.length,
-      itemBuilder: (context, index) {
-        final day = summaries[index];
-        final isLast = index == summaries.length - 1;
-        return Padding(
-          padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _DaySummaryHeader(summary: day),
-              const SizedBox(height: 10),
-              for (final txn in day.transactions)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _TransactionRow(
-                    transaction: txn,
-                    onTap: () => showDialog(
-                      context: context,
-                      barrierColor: Colors.black54,
-                      builder: (_) => TransactionDetailModal(transaction: txn),
-                    ),
-                  ),
-                ),
-            ],
+  Future<void> _pickDate(List<DaySummary> allSummaries) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Earliest day with any recorded sales, so the picker doesn't offer
+    // an empty range before the shop had any transactions logged.
+    final firstDate = allSummaries.isEmpty
+        ? today
+        : allSummaries.map((s) => s.day).reduce((a, b) => a.isBefore(b) ? a : b);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _filterDate ?? today,
+      firstDate: firstDate,
+      lastDate: today,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.ledAmber,
+              onPrimary: AppColors.charcoal,
+              surface: AppColors.slate,
+              onSurface: AppColors.textPrimary,
+            ),
+            dialogBackgroundColor: AppColors.slate,
           ),
+          child: child!,
         );
       },
+    );
+    if (picked != null) {
+      setState(() => _filterDate = DateTime(picked.year, picked.month, picked.day));
+    }
+  }
+
+  void _clearFilter() => setState(() => _filterDate = null);
+
+  @override
+  Widget build(BuildContext context) {
+    final allSummaries = context.watch<TransactionProvider>().dailySummaries;
+    final filterDate = _filterDate;
+    final summaries =
+        filterDate == null ? allSummaries : allSummaries.where((s) => s.day == filterDate).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: [
+              if (filterDate != null)
+                Expanded(
+                  child: _DateFilterChip(date: filterDate, onClear: _clearFilter),
+                )
+              else
+                const Spacer(),
+              IconButton(
+                onPressed: () => _pickDate(allSummaries),
+                icon: const Icon(Icons.calendar_today_outlined, color: AppColors.textSecondary, size: 18),
+                tooltip: 'Jump to date',
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: summaries.isEmpty
+              ? Center(
+                  child: Text(
+                    filterDate == null ? 'No transactions yet' : 'No transactions on this date',
+                    style: AppTextStyles.body(size: 13, color: AppColors.textMuted),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: summaries.length,
+                  itemBuilder: (context, index) {
+                    final day = summaries[index];
+                    final isLast = index == summaries.length - 1;
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _DaySummaryHeader(summary: day),
+                          const SizedBox(height: 10),
+                          for (final txn in day.transactions)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _TransactionRow(
+                                transaction: txn,
+                                onTap: () => showDialog(
+                                  context: context,
+                                  barrierColor: Colors.black54,
+                                  builder: (_) => TransactionDetailModal(transaction: txn),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+const _monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/// Shared label formatting so the day headers and the filter chip always
+/// describe the same date the same way ("Today" / "Yesterday" / full date).
+String _dayLabel(DateTime day) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final yesterday = today.subtract(const Duration(days: 1));
+  if (day == today) return 'Today';
+  if (day == yesterday) return 'Yesterday';
+  return '${_monthNames[day.month - 1]} ${day.day}, ${day.year}';
+}
+
+class _DateFilterChip extends StatelessWidget {
+  final DateTime date;
+  final VoidCallback onClear;
+
+  const _DateFilterChip({required this.date, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.slateField,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.ledAmber.withOpacity(0.4), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.event, color: AppColors.ledAmber, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            _dayLabel(date),
+            style: AppTextStyles.mono(size: 12, weight: FontWeight.w700, color: AppColors.ledAmber),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onClear,
+            child: const Icon(Icons.close, color: AppColors.textMuted, size: 15),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -61,20 +183,6 @@ class _DaySummaryHeader extends StatelessWidget {
   final DaySummary summary;
 
   const _DaySummaryHeader({required this.summary});
-
-  static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
-
-  String _label(DateTime day) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    if (day == today) return 'Today';
-    if (day == yesterday) return 'Yesterday';
-    return '${_months[day.month - 1]} ${day.day}, ${day.year}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +194,7 @@ class _DaySummaryHeader extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                _label(summary.day),
+                _dayLabel(summary.day),
                 style: AppTextStyles.mono(
                   size: 12.5,
                   weight: FontWeight.w700,

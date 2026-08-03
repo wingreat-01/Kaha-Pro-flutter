@@ -90,32 +90,27 @@ class _ProductCardState extends State<ProductCard> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 14),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final side = constraints.hasBoundedWidth
-                          ? (constraints.maxWidth * 0.72).clamp(56.0, 96.0)
-                          : 84.0;
-                      return SizedBox(
-                        width: side,
-                        height: side,
+                  Expanded(
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 1,
                         child: imageBytes != null
                             ? ClipRRect(
-                                borderRadius: BorderRadius.circular(side * 0.28),
+                                borderRadius: BorderRadius.circular(16),
                                 child: Image.memory(
                                   imageBytes,
                                   fit: BoxFit.cover,
                                 ),
                               )
-                            : Center(
+                            : FittedBox(
                                 child: Text(
                                   product.emoji ?? '🛒',
-                                  style: TextStyle(fontSize: side * 0.4),
+                                  style: const TextStyle(fontSize: 40),
                                 ),
                               ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
