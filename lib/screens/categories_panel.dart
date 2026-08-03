@@ -65,7 +65,15 @@ class _CategoryRow extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: _isProtected ? null : () => CategoriesPanel._showCategoryForm(context, existing: name),
+        onTap: () {
+          if (_isProtected) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => _CategoryProductsView(categoryName: name)),
+            );
+          } else {
+            CategoriesPanel._showCategoryForm(context, existing: name);
+          }
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -94,7 +102,7 @@ class _CategoryRow extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       _isProtected
-                          ? '$count product${count == 1 ? '' : 's'} • fallback bucket, can\'t be edited or deleted'
+                          ? '$count product${count == 1 ? '' : 's'} • fallback bucket, tap to view (can\'t be edited or deleted)'
                           : '$count product${count == 1 ? '' : 's'}',
                       style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
                     ),
@@ -107,7 +115,7 @@ class _CategoryRow extends StatelessWidget {
                   onPressed: () => _confirmDelete(context, name, count),
                 )
               else
-                Icon(Icons.lock_outline, size: 16, color: AppColors.textMuted),
+                Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
             ],
           ),
         ),
@@ -141,6 +149,81 @@ class _CategoryRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Read-only product list for a category — currently only reachable from
+/// the protected `Uncategorized` row, since every other category opens
+/// the rename dialog instead. No edit/delete affordances here; if you
+/// need to move a product out, do it from the product's own edit flow
+/// in InventoryPanel.
+class _CategoryProductsView extends StatelessWidget {
+  final String categoryName;
+  const _CategoryProductsView({required this.categoryName});
+
+  @override
+  Widget build(BuildContext context) {
+    final products = context
+        .watch<ProductProvider>()
+        .products
+        .where((p) => p.category == categoryName)
+        .toList();
+
+    return Scaffold(
+      backgroundColor: AppColors.charcoal,
+      appBar: AppBar(
+        backgroundColor: AppColors.charcoal,
+        elevation: 0,
+        title: Text(categoryName, style: AppTextStyles.mono(size: 16, weight: FontWeight.w700)),
+      ),
+      body: products.isEmpty
+          ? Center(
+              child: Text(
+                'No products here',
+                style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: products.length,
+              itemBuilder: (context, i) {
+                final p = products[i];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.slate,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.slateBorder, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(p.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+                            const SizedBox(height: 4),
+                            Text(
+                              p.isLowStock ? 'Stock: ${p.stockQty} • LOW' : 'Stock: ${p.stockQty}',
+                              style: AppTextStyles.body(
+                                size: 12,
+                                color: p.isLowStock ? AppColors.ledgerRed : AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '₱${p.price.toStringAsFixed(2)}',
+                        style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }
