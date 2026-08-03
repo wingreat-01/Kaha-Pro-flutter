@@ -13,9 +13,10 @@ enum _Section { register, transactions, settings }
 /// Register/Transactions/Users/Settings used to be crammed together into
 /// the category tab row alongside actual product categories — that both
 /// overflowed the tab bar on phone widths and mixed "what am I selling"
-/// with "where do I manage the app" in one row. Transactions and Settings
-/// are header-level concerns now, next to Logout; Register (with its own
-/// category tabs) is the default body.
+/// with "where do I manage the app" in one row. Register, Transactions,
+/// and Settings are all header-level icons now (Register first, then
+/// Transactions, then Settings, then Logout) so there's always a way
+/// back to the product grid from anywhere.
 class HomeShell extends StatefulWidget {
   final String username;
   final VoidCallback onLogout;
@@ -61,6 +62,12 @@ class _HomeShellState extends State<HomeShell> {
         elevation: 0,
         title: Text('KAHAPRO', style: AppTextStyles.mono(size: 16, weight: FontWeight.w700, letterSpacing: 1)),
         actions: [
+          _headerIcon(
+            icon: Icons.point_of_sale_outlined,
+            tooltip: 'Register',
+            isActive: _section == _Section.register,
+            onTap: () => setState(() => _section = _Section.register),
+          ),
           _headerIcon(
             icon: Icons.receipt_long_outlined,
             tooltip: 'Transactions',
