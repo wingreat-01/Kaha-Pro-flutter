@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'inventory_panel.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -7,9 +8,9 @@ import '../theme/app_theme.dart';
 /// row) since it's an admin concern, not something a cashier needs
 /// mid-sale.
 ///
-/// Phase 4 will wire these rows up to real screens (user list/roles,
-/// category editor, product catalog admin). For now they're placeholder
-/// rows so the navigation shape is in place ahead of that work.
+/// "Products" opens the real Inventory panel now. The rest are still
+/// placeholders for Phase 4 (user list/roles, category editor, store
+/// details, about) — the navigation shape is in place ahead of that work.
 class SettingsPanel extends StatelessWidget {
   const SettingsPanel({super.key});
 
@@ -17,14 +18,14 @@ class SettingsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: const [
-        _SettingsSectionLabel('ADMIN'),
-        _SettingsRow(
+      children: [
+        const _SettingsSectionLabel('ADMIN'),
+        const _SettingsRow(
           icon: Icons.people_outline,
           label: 'Users',
           subtitle: 'Manage cashier & admin accounts',
         ),
-        _SettingsRow(
+        const _SettingsRow(
           icon: Icons.category_outlined,
           label: 'Categories',
           subtitle: 'Edit product categories',
@@ -32,16 +33,19 @@ class SettingsPanel extends StatelessWidget {
         _SettingsRow(
           icon: Icons.inventory_2_outlined,
           label: 'Products',
-          subtitle: 'Manage the full catalog',
+          subtitle: 'Manage the full catalog & stock levels',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const InventoryPanel()),
+          ),
         ),
-        SizedBox(height: 24),
-        _SettingsSectionLabel('APP'),
-        _SettingsRow(
+        const SizedBox(height: 24),
+        const _SettingsSectionLabel('APP'),
+        const _SettingsRow(
           icon: Icons.storefront_outlined,
           label: 'Store details',
           subtitle: 'Name, address, receipt footer',
         ),
-        _SettingsRow(
+        const _SettingsRow(
           icon: Icons.info_outline,
           label: 'About',
           subtitle: 'Version, support',
@@ -71,11 +75,13 @@ class _SettingsRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String subtitle;
+  final VoidCallback? onTap;
 
   const _SettingsRow({
     required this.icon,
     required this.label,
     required this.subtitle,
+    this.onTap,
   });
 
   @override
@@ -89,9 +95,8 @@ class _SettingsRow extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () {
-          // TODO(Phase 4): navigate to the real admin screen for this row.
-        },
+        // Rows without a real destination yet (Phase 4) just no-op.
+        onTap: onTap ?? () {},
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(

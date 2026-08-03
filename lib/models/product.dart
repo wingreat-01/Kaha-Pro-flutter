@@ -9,6 +9,9 @@ class Product {
   final Uint8List? imageBytes; // user-uploaded product photo, in-memory for
                                 // now — move to Supabase Storage once that
                                 // integration lands (see migration plan)
+  final int stockQty; // current on-hand count, adjusted via InventoryPanel
+                       // or automatically on checkout
+  final int lowStockThreshold; // stockQty at/below this shows a LOW badge
 
   const Product({
     required this.id,
@@ -17,7 +20,11 @@ class Product {
     required this.category,
     this.emoji,
     this.imageBytes,
+    this.stockQty = 0,
+    this.lowStockThreshold = 5,
   });
+
+  bool get isLowStock => stockQty <= lowStockThreshold;
 
   Product copyWith({
     String? name,
@@ -25,6 +32,8 @@ class Product {
     String? category,
     String? emoji,
     Uint8List? imageBytes,
+    int? stockQty,
+    int? lowStockThreshold,
   }) {
     return Product(
       id: id,
@@ -33,6 +42,8 @@ class Product {
       category: category ?? this.category,
       emoji: emoji ?? this.emoji,
       imageBytes: imageBytes ?? this.imageBytes,
+      stockQty: stockQty ?? this.stockQty,
+      lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
     );
   }
 }

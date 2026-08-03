@@ -104,7 +104,7 @@ modal (TOTAL DUE / CHANGE), and the transaction detail view
           tapping *sets* the field directly rather than adding.
           Confirmed pattern (e.g. ₱1043 → ₱1050/₱1100/₱1500; ₱1083 →
           ₱1100/₱1500; ₱1540 → ₱1550/₱1600/₱2000).
-- [~] **Phase 3 — Transactions & Inventory panels**: in progress.
+- [x] **Phase 3 — Transactions & Inventory panels**: complete.
   - [x] **Transaction logging + Transactions tab** — `Transaction` /
         `TransactionLineItem` models (`lib/models/transaction.dart`)
         snapshot each cart line at sale time (name/price/qty/category
@@ -121,11 +121,48 @@ modal (TOTAL DUE / CHANGE), and the transaction detail view
         those only apply to the catalog grid) instead of the product
         grid; tapping a row opens `transaction_detail_modal.dart`
         with the full line-item breakdown and totals.
-  - [ ] Day summary / history rollups (totals by day, etc.) — not
-        started.
-  - [ ] Real inventory list/add/edit panel — not started; would
-        likely absorb/replace the in-memory `ProductProvider` with
-        persisted data.
+  - [x] **Day summary / history rollups** — `TransactionProvider`'s
+        `dailySummaries` getter groups logged transactions by calendar
+        day (newest day first), backing the Transactions tab's daily
+        totals. Confirmed done.
+  - [x] **Real inventory list/add/edit panel** — `InventoryPanel`
+        (`lib/screens/inventory_panel.dart`), reached via **Settings →
+        Products**. Stock lives directly on `Product`
+        (`stockQty`, `lowStockThreshold`, `isLowStock` getter) rather
+        than a separate parallel list, so it can't drift out of sync
+        with the catalog. `ProductProvider` gained `adjustStock`
+        (± delta, clamped at 0), `setStock` (absolute, for recounts),
+        `setLowStockThreshold`, and `lowStockProducts`. Rows show a
+        red "LOW" badge at/below threshold, +/- steppers, and a tap
+        opens a dialog to set exact stock + edit the threshold.
+        **Checkout now deducts stock automatically**: `ProductProvider
+        .deductStockForSale(List<CartItem>)` is called from
+        `checkout_modal.dart`'s `_confirm()` right after the sale is
+        recorded and before the cart clears, using the same pre-clear
+        cart snapshot the transaction was logged from.
+- [x] **Header navigation restructure**: Transactions, Users, and
+      Settings used to be crammed into the register screen's category
+      tab row alongside real product categories — overflowed the tab
+      bar on phone widths and mixed "what am I selling" with "where do
+      I manage the app." Now: `HomeShell` (`lib/screens/home_shell.dart`)
+      owns top-level section state and shows four header icons —
+      **Register** (point-of-sale icon) → **Transactions** (receipt
+      icon) → **Settings** (gear icon) → **Logout** — with the active
+      section's icon lit amber. `register_screen.dart`'s category tabs
+      now hold only real product categories (`All`, `Main`, `Add Ons`,
+      `Drinks`). New `SettingsPanel` (`lib/screens/settings_panel.dart`)
+      houses **Users** (moved here from being its own top-level tab),
+      **Categories**, **Products** (opens `InventoryPanel`), **Store
+      details**, and **About** — all but Products are still Phase 4
+      placeholders.
+- [x] **Checkout modal first-open jank fix**: new `CheckoutWarmup`
+      widget (`lib/widgets/checkout_warmup.dart`), mounted in
+      `HomeShell`. Invisibly pre-renders the same `LedTotal`
+      mono-font readouts and rounded-container styling the checkout
+      modal uses, for exactly one frame right after login, so the
+      IBM Plex Mono glyph rasterization/shader-compile cost is paid
+      quietly instead of during a cashier's first real checkout. Then
+      unmounts itself.
 - [ ] **Phase 4 — Admin**: Users, Products, Categories managers. Not
       started.
 - [ ] **Phase 5 — Polish**: animations (digit flip on total change),
@@ -158,15 +195,17 @@ Desktop/
         product_provider.dart
         transaction_provider.dart ← logs completed sales, ledger-style numbering
       models/
-        product.dart
+        product.dart               ← now includes stockQty, lowStockThreshold, isLowStock
         cart_item.dart
         transaction.dart          ← Transaction + TransactionLineItem (immutable snapshot)
       data/
         mock_products.dart        ← seed data for ProductProvider
       screens/
         login_screen.dart
-        home_shell.dart           ← embeds RegisterScreen
-        register_screen.dart
+        home_shell.dart           ← owns top-level section nav (Register/Transactions/Settings) + header icons
+        register_screen.dart      ← category tabs now hold only real product categories
+        settings_panel.dart       ← Users/Categories/Products(→Inventory)/Store details/About
+        inventory_panel.dart      ← stock list, low-stock badges, +/- steppers, restock/threshold dialog
       widgets/
         category_sidebar.dart         (wide/web)
         category_segmented_tabs.dart  (phone)
@@ -178,8 +217,9 @@ Desktop/
         cart_bottom_bar.dart          (phone, expands to sheet)
         cart_list.dart                (shared qty-stepper list, incl. ✕ remove)
         led_total.dart                (glowing amber total readout)
-        checkout_modal.dart           (Pass C: cash entry, quick chips, change calc)
-        transactions_panel.dart       (Transactions tab list)
+        checkout_modal.dart           (Pass C: cash entry, quick chips, change calc, deducts stock on confirm)
+        checkout_warmup.dart          (pre-warms checkout modal's font/paint cost once after login)
+        transactions_panel.dart       (Transactions tab list, incl. day summaries)
         transaction_detail_modal.dart (tap a transaction row for detail)
     assets/logo.png
     pubspec.yaml                  ← needs: provider, google_fonts
@@ -209,10 +249,11 @@ wiring each provider to Supabase vs. keeping them in-memory for now —
 to be worked out when this track starts.
 
 ## How to resume
-Tell Claude: "continue the Kahapro Flutter migration — confirm the
-customizable catalog (add/delete products) is working end-to-end,
-then start the Supabase integration (auth, database, storage)." If
-picking a smaller next step instead, Phase 3's remaining pieces (day
-summary/history rollups, real inventory list/add/edit) or Phase 4
-(Admin: Users, Products, Categories) are also open. Upload this file
-at the start of a fresh conversation so context carries over.
+Tell Claude: "continue the Kahapro Flutter migration — start the
+Supabase integration (auth, database, storage)." Phase 3 (Transactions,
+day summaries, and the real inventory panel) is done; the remaining
+open work is Phase 4 (Admin: Users, Products, Categories managers —
+`SettingsPanel`'s rows are already placeholders waiting on these) and
+Phase 5 (Polish: animations, further responsive tuning, real app icon,
+real authentication). Upload this file at the start of a fresh
+conversation so context carries over.

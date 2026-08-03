@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/cart_provider.dart';
+import '../state/product_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 import 'led_total.dart';
@@ -121,12 +122,18 @@ class _CheckoutModalState extends State<CheckoutModal> {
     }
     final tendered = _tendered!;
     final change = _change;
+    final soldItems = widget.cart.items; // snapshot before clearing
     context.read<TransactionProvider>().record(
-          cartItems: widget.cart.items,
+          cartItems: soldItems,
           total: _total,
           cashTendered: tendered,
           change: change,
         );
+    // Deduct stock right after the sale is logged, using the same
+    // pre-clear snapshot of cart lines the transaction was recorded
+    // from — keeps stock and the transaction log in sync with the
+    // same sale.
+    context.read<ProductProvider>().deductStockForSale(soldItems);
     widget.cart.clear();
     Navigator.of(context).pop(true);
   }

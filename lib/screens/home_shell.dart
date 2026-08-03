@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../widgets/checkout_warmup.dart';
 import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
 import 'settings_panel.dart';
@@ -88,7 +89,12 @@ class _HomeShellState extends State<HomeShell> {
           const SizedBox(width: 4),
         ],
       ),
-      body: _body(),
+      body: Stack(
+        children: [
+          _body(),
+          const CheckoutWarmup(),
+        ],
+      ),
     );
   }
 }
