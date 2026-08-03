@@ -90,9 +90,8 @@ class _CheckoutModalState extends State<CheckoutModal> {
   // *adds* it to whatever's already entered, so a couple of taps can
   // stack bills together. An amount only shows if it alone could cover
   // the total (e.g. a ₱93 total hides "+₱50" but keeps "+₱100", "+₱500",
-  // "+₱1000"). ₱70 is included alongside the single bills because a
-  // ₱20 + ₱50 combo is a common way to hand over cash in that range.
-  static const List<double> _billDenominations = [50, 70, 100, 500, 1000];
+  // "+₱1000"). These are the actual Philippine peso bill denominations.
+  static const List<double> _billDenominations = [20, 50, 100, 500, 1000];
 
   // Above ₱1000, no single bill covers the total, so there's nothing
   // sensible to "add". Instead offer nice round-up targets — next
