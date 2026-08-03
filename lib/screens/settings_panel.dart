@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'inventory_panel.dart';
+import 'users_panel.dart';
+import 'categories_panel.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -8,9 +10,9 @@ import 'inventory_panel.dart';
 /// row) since it's an admin concern, not something a cashier needs
 /// mid-sale.
 ///
-/// "Products" opens the real Inventory panel now. The rest are still
-/// placeholders for Phase 4 (user list/roles, category editor, store
-/// details, about) — the navigation shape is in place ahead of that work.
+/// "Products" opens the real Inventory panel, "Users" opens the real
+/// Users panel, "Categories" opens the real Categories panel. Store
+/// details and About are still placeholders (Phase 5).
 class SettingsPanel extends StatelessWidget {
   const SettingsPanel({super.key});
 
@@ -20,15 +22,21 @@ class SettingsPanel extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const _SettingsSectionLabel('ADMIN'),
-        const _SettingsRow(
+        _SettingsRow(
           icon: Icons.people_outline,
           label: 'Users',
           subtitle: 'Manage cashier & admin accounts',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const UsersPanel()),
+          ),
         ),
-        const _SettingsRow(
+        _SettingsRow(
           icon: Icons.category_outlined,
           label: 'Categories',
           subtitle: 'Edit product categories',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CategoriesPanel()),
+          ),
         ),
         _SettingsRow(
           icon: Icons.inventory_2_outlined,
@@ -95,7 +103,7 @@ class _SettingsRow extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        // Rows without a real destination yet (Phase 4) just no-op.
+        // Rows without a real destination yet (rest of Phase 4 / Phase 5) just no-op.
         onTap: onTap ?? () {},
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
