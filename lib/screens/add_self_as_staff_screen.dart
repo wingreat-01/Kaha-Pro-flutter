@@ -11,12 +11,10 @@ import '../theme/app_theme.dart';
 /// 'admin', then hands control back to main.dart via onDone so it
 /// can re-check staff_users and fall through to the PIN pad.
 ///
-/// ASSUMPTION FLAGGED: add_staff_user()'s exact parameter names
-/// (staff_name / pin / role below) are inferred from the
-/// verify_staff_login() call shape in login_screen.dart -- worth
-/// confirming against the actual function signature before this
-/// compiles clean, since a mismatched param name fails at the RPC
-/// call, not at compile time.
+/// add_staff_user()'s real signature (confirmed via PostgREST's
+/// error hint after a param-name mismatch) is
+/// add_staff_user(pin, staff_name, staff_role) — the RPC call below
+/// matches that.
 class AddSelfAsStaffScreen extends StatefulWidget {
   final VoidCallback onDone;
   const AddSelfAsStaffScreen({super.key, required this.onDone});
@@ -71,7 +69,7 @@ class _AddSelfAsStaffScreenState extends State<AddSelfAsStaffScreen> {
         params: {
           'staff_name': name,
           'pin': pin,
-          'role': 'admin',
+          'staff_role': 'admin',
         },
       );
       if (!mounted) return;
@@ -79,6 +77,7 @@ class _AddSelfAsStaffScreenState extends State<AddSelfAsStaffScreen> {
       widget.onDone();
     } catch (e) {
       if (!mounted) return;
+      debugPrint('add_staff_user failed: $e');
       setState(() {
         _error = 'Something went wrong saving your staff account. Please try again.';
         _loading = false;

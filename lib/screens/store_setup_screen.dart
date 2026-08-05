@@ -38,10 +38,12 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   bool _isSignIn = false;
   bool _loading = false;
   String? _error;
+  String? _info;
 
   Future<void> _submit() async {
     setState(() {
       _error = null;
+      _info = null;
       _loading = true;
     });
 
@@ -62,6 +64,8 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
           email: email,
           password: password,
         );
+        // Success falls through with no navigation call -- the auth
+        // state stream in main.dart picks up the new session.
       } else {
         final storeName = _storeNameCtrl.text.trim();
         if (storeName.isEmpty) {
@@ -71,14 +75,29 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
           });
           return;
         }
-        await Supabase.instance.client.auth.signUp(
+        final res = await Supabase.instance.client.auth.signUp(
           email: email,
           password: password,
           data: {'store_name': storeName},
         );
+
+        if (res.session == null) {
+          // "Confirm email" is on in Supabase's Auth settings: the
+          // account (and the stores/store_members/category rows via
+          // handle_new_user) is created, but no session comes back
+          // until they click the link in their inbox. Without this,
+          // the screen just sat there looking unresponsive.
+          setState(() {
+            _loading = false;
+            _isSignIn = true;
+            _info = 'Account created for $email. Check your inbox for a '
+                'confirmation link, then sign in here.';
+          });
+          return;
+        }
+        // Confirmation is off -- session came back immediately, and
+        // the auth state stream in main.dart takes it from here.
       }
-      // Success falls through to here with no navigation call --
-      // the auth state stream in main.dart takes it from here.
     } on AuthException catch (e) {
       setState(() {
         _error = e.message;
@@ -100,6 +119,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     setState(() {
       _isSignIn = !_isSignIn;
       _error = null;
+      _info = null;
     });
   }
 
@@ -174,6 +194,10 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Text(_error!, style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed)),
+                  ],
+                  if (_info != null) ...[
+                    const SizedBox(height: 12),
+                    Text(_info!, style: AppTextStyles.body(size: 13, color: AppColors.tillGreen)),
                   ],
                   const SizedBox(height: 22),
                   SizedBox(

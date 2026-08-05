@@ -11,11 +11,13 @@ import '../theme/app_theme.dart';
 /// instead of the old in-memory UserProvider list.
 ///
 /// Assumes a store-owner Supabase Auth session is already active —
-/// that gets established during first-run owner signup/sign-in, which
-/// is a separate screen not built yet. Without an active session,
-/// current_store_id() resolves to nothing server-side and every PIN
-/// would silently fail, so that case gets its own message below rather
-/// than surfacing as a confusing "Invalid name or PIN."
+/// that gets established during first-run owner signup/sign-in
+/// (StoreSetupScreen), and the empty-staff_users case is handled by
+/// AddSelfAsStaffScreen before this screen is ever reached. Without
+/// an active session, current_store_id() resolves to nothing
+/// server-side and every PIN would silently fail, so that case gets
+/// its own message below rather than surfacing as a confusing
+/// "Invalid name or PIN."
 class LoginScreen extends StatefulWidget {
   final void Function(AppUser user) onLogin;
   const LoginScreen({super.key, required this.onLogin});
@@ -29,6 +31,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _pinCtrl = TextEditingController();
   String? _error;
   bool _loading = false;
+
+  UserRole _parseRole(String? raw) {
+    // verify_staff_login returns role as plain text ('admin' /
+    // 'cashier'); UserRole.values.byName throws on anything else,
+    // which we don't want mid-login, so fall back to the least
+    // privileged role rather than crashing on an unexpected value.
+    return UserRole.values.firstWhere(
+      (r) => r.name == raw,
+      orElse: () => UserRole.cashier,
+    );
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -76,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final matched = AppUser(
         id: row['id'] as String,
         name: row['name'] as String,
-        role: row['role'] as String,
+        role: _parseRole(row['role'] as String?),
       );
 
       // Fetch-once-on-login (Phase D) — load this store's catalog

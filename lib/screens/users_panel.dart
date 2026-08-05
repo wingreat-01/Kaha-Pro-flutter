@@ -6,15 +6,32 @@ import '../models/user.dart';
 import '../state/user_provider.dart';
 
 /// Users admin panel — reached via Settings → Users. Lists staff accounts
-/// (name, role, masked PIN) with add/edit/delete. The PIN here is a
-/// placeholder passcode (see user.dart) — real auth is still Phase 5 /
-/// the Supabase track, not this screen.
-class UsersPanel extends StatelessWidget {
+/// (name, role) with add/edit/delete, backed by Supabase's staff_users
+/// table via UserProvider. PINs are write-only from this screen's
+/// perspective — never displayed or pre-filled, since only a hash is
+/// ever stored.
+class UsersPanel extends StatefulWidget {
   const UsersPanel({super.key});
 
   @override
+  State<UsersPanel> createState() => _UsersPanelState();
+}
+
+class _UsersPanelState extends State<UsersPanel> {
+  @override
+  void initState() {
+    super.initState();
+    // Kick off the load after the first frame so context.read() during
+    // build isn't an issue.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<UserProvider>().loadFromSupabase();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final users = context.watch<UserProvider>().users;
+    final provider = context.watch<UserProvider>();
+    final users = provider.users;
 
     return Scaffold(
       backgroundColor: AppColors.charcoal,
@@ -30,18 +47,30 @@ class UsersPanel extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Add user'),
       ),
-      body: users.isEmpty
-          ? Center(
-              child: Text(
-                'No users yet',
-                style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              itemCount: users.length,
-              itemBuilder: (context, i) => _UserRow(user: users[i]),
-            ),
+      body: provider.loading && users.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : provider.error != null && users.isEmpty
+              ? Center(
+                  child: Text(
+                    provider.error!,
+                    style: AppTextStyles.body(size: 14, color: AppColors.ledgerRed),
+                  ),
+                )
+              : users.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No users yet',
+                        style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () => context.read<UserProvider>().loadFromSupabase(),
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                        itemCount: users.length,
+                        itemBuilder: (context, i) => _UserRow(user: users[i]),
+                      ),
+                    ),
     );
   }
 
@@ -70,7 +99,7 @@ class _UserRow extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => UsersPanel._showUserForm(context, existing: user),
+        onTap: () => _UsersPanelState._showUserForm(context, existing: user),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -101,8 +130,11 @@ class _UserRow extends StatelessWidget {
                       children: [
                         _RoleBadge(role: user.role),
                         const SizedBox(width: 8),
+                        // No PIN length to reflect anymore -- only a
+                        // hash exists server-side -- so this is just a
+                        // fixed placeholder instead of '•' * pin.length.
                         Text(
-                          '•  PIN ${'•' * user.pin.length}',
+                          '•  PIN ••••',
                           style: AppTextStyles.mono(size: 12, color: AppColors.textMuted),
                         ),
                       ],
@@ -113,7 +145,7 @@ class _UserRow extends StatelessWidget {
               IconButton(
                 icon: Icon(Icons.edit_outlined, size: 20, color: AppColors.textSecondary),
                 tooltip: 'Edit',
-                onPressed: () => UsersPanel._showUserForm(context, existing: user),
+                onPressed: () => _UsersPanelState._showUserForm(context, existing: user),
               ),
               IconButton(
                 icon: Icon(Icons.delete_outline, size: 20, color: AppColors.ledgerRed),
@@ -143,9 +175,18 @@ class _UserRow extends StatelessWidget {
             child: Text('Cancel', style: AppTextStyles.body(color: AppColors.textSecondary)),
           ),
           TextButton(
-            onPressed: () {
-              context.read<UserProvider>().deleteUser(user.id);
+            onPressed: () async {
+              final provider = context.read<UserProvider>();
               Navigator.of(dialogContext).pop();
+              try {
+                await provider.deleteUser(user.id);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not remove user. Please try again.')),
+                  );
+                }
+              }
             },
             child: Text('Remove', style: AppTextStyles.body(color: AppColors.ledgerRed, weight: FontWeight.w700)),
           ),
@@ -179,6 +220,9 @@ class _RoleBadge extends StatelessWidget {
 }
 
 /// Add/edit form. Reused for both — `existing` null means "add new".
+/// On edit, the PIN field starts empty and stays optional: leaving it
+/// blank keeps the existing PIN, since a plaintext PIN is never
+/// available to pre-fill from Supabase (only pin_hash is stored).
 class _UserFormDialog extends StatefulWidget {
   final AppUser? existing;
   const _UserFormDialog({this.existing});
@@ -192,6 +236,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   late final TextEditingController _pinController;
   late UserRole _role;
   String? _error;
+  bool _saving = false;
 
   bool get _isEditing => widget.existing != null;
 
@@ -199,7 +244,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.existing?.name ?? '');
-    _pinController = TextEditingController(text: widget.existing?.pin ?? '');
+    _pinController = TextEditingController(); // always starts blank now
     _role = widget.existing?.role ?? UserRole.cashier;
   }
 
@@ -210,7 +255,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final name = _nameController.text.trim();
     final pin = _pinController.text.trim();
 
@@ -218,18 +263,36 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       setState(() => _error = 'Name is required.');
       return;
     }
-    if (pin.length < 4 || pin.length > 6) {
+    // On add, a PIN is mandatory. On edit, blank means "keep current."
+    if (!_isEditing && pin.isEmpty) {
+      setState(() => _error = 'PIN is required.');
+      return;
+    }
+    if (pin.isNotEmpty && (pin.length < 4 || pin.length > 6)) {
       setState(() => _error = 'PIN must be 4–6 digits.');
       return;
     }
 
+    setState(() {
+      _error = null;
+      _saving = true;
+    });
+
     final provider = context.read<UserProvider>();
-    if (_isEditing) {
-      provider.updateUser(widget.existing!.id, name: name, role: _role, pin: pin);
-    } else {
-      provider.addUser(name: name, role: _role, pin: pin);
+    try {
+      if (_isEditing) {
+        await provider.updateUser(widget.existing!.id, name: name, role: _role, pin: pin);
+      } else {
+        await provider.addUser(name: name, role: _role, pin: pin);
+      }
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Something went wrong saving this user. Please try again.';
+        _saving = false;
+      });
     }
-    Navigator.of(context).pop();
   }
 
   @override
@@ -272,7 +335,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(6),
               ],
-              decoration: const InputDecoration(labelText: 'PIN (4–6 digits)'),
+              decoration: InputDecoration(
+                labelText: _isEditing ? 'New PIN (leave blank to keep current)' : 'PIN (4–6 digits)',
+              ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
@@ -283,15 +348,20 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: Text('Cancel', style: AppTextStyles.body(color: AppColors.textSecondary)),
         ),
         TextButton(
-          onPressed: _submit,
-          child: Text(
-            _isEditing ? 'Save' : 'Add',
-            style: AppTextStyles.body(color: AppColors.ledAmber, weight: FontWeight.w700),
-          ),
+          onPressed: _saving ? null : _submit,
+          child: _saving
+              ? const SizedBox(
+                  height: 16, width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(
+                  _isEditing ? 'Save' : 'Add',
+                  style: AppTextStyles.body(color: AppColors.ledAmber, weight: FontWeight.w700),
+                ),
         ),
       ],
     );

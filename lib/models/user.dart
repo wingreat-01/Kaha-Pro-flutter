@@ -1,11 +1,14 @@
 /// A staff account — cashier or admin.
 ///
-/// Auth itself is still the Phase 5 placeholder (login_screen.dart accepts
-/// any non-empty username/password) — this model just gives Phase 4's
-/// Users admin panel something real to manage ahead of that, and ahead of
-/// Supabase Auth eventually replacing the whole login flow. The `pin` field
-/// is a placeholder passcode, not a real credential — don't treat it as
-/// secure storage.
+/// `pin` is optional and defaults to empty. It used to be required back
+/// when this model was the Phase 5 placeholder standing in for real
+/// auth (see the old comment below) — now that login_screen.dart
+/// authenticates against verify_staff_login() and builds this object
+/// from the RPC result, there's no reason to carry the PIN around in
+/// memory after a successful sign-in, so nothing sets it anymore.
+/// Left in (rather than deleted) in case Phase 4's Users admin panel
+/// still references it when editing staff records — worth confirming
+/// and removing outright if not.
 enum UserRole { admin, cashier }
 
 extension UserRoleLabel on UserRole {
@@ -29,7 +32,7 @@ class AppUser {
     required this.id,
     required this.name,
     required this.role,
-    required this.pin,
+    this.pin = '',
   });
 
   AppUser copyWith({String? name, UserRole? role, String? pin}) {
