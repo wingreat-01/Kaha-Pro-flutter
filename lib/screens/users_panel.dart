@@ -111,7 +111,13 @@ class _UserRow extends StatelessWidget {
                 ),
               ),
               IconButton(
+                icon: Icon(Icons.edit_outlined, size: 20, color: AppColors.textSecondary),
+                tooltip: 'Edit',
+                onPressed: () => UsersPanel._showUserForm(context, existing: user),
+              ),
+              IconButton(
                 icon: Icon(Icons.delete_outline, size: 20, color: AppColors.ledgerRed),
+                tooltip: 'Delete',
                 onPressed: () => _confirmDelete(context, user),
               ),
             ],

@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../models/user.dart';
+import '../state/user_provider.dart';
 import '../theme/app_theme.dart';
 
+/// Real auth, wired to UserProvider (Phase 5). Matches on name
+/// (case-insensitive — typing "admin" matches an account named "Admin")
+/// and an exact PIN. There's still no hashing/session/token layer here —
+/// that's the Supabase Auth track — this just replaces the old
+/// accept-any-non-empty-string placeholder with a real check against
+/// the accounts created in Settings → Users.
 class LoginScreen extends StatefulWidget {
-  final void Function(String username, String password) onLogin;
+  final void Function(AppUser user) onLogin;
   const LoginScreen({super.key, required this.onLogin});
 
   @override
@@ -10,8 +20,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _userCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _pinCtrl = TextEditingController();
   String? _error;
   bool _loading = false;
 
@@ -20,23 +30,44 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
       _loading = true;
     });
-    // TODO: wire up to your real auth check (Firebase Auth, API, etc.)
     await Future.delayed(const Duration(milliseconds: 300));
-    if (_userCtrl.text.trim().isEmpty || _passCtrl.text.trim().isEmpty) {
+
+    final name = _nameCtrl.text.trim();
+    final pin = _pinCtrl.text.trim();
+
+    if (name.isEmpty || pin.isEmpty) {
       setState(() {
-        _error = 'Invalid username or password.';
+        _error = 'Enter your name and PIN.';
         _loading = false;
       });
       return;
     }
+
+    final users = context.read<UserProvider>().users;
+    AppUser? match;
+    for (final u in users) {
+      if (u.name.toLowerCase() == name.toLowerCase() && u.pin == pin) {
+        match = u;
+        break;
+      }
+    }
+
+    if (match == null) {
+      setState(() {
+        _error = 'Invalid name or PIN.';
+        _loading = false;
+      });
+      return;
+    }
+
     setState(() => _loading = false);
-    widget.onLogin(_userCtrl.text.trim(), _passCtrl.text.trim());
+    widget.onLogin(match);
   }
 
   @override
   void dispose() {
-    _userCtrl.dispose();
-    _passCtrl.dispose();
+    _nameCtrl.dispose();
+    _pinCtrl.dispose();
     super.dispose();
   }
 
@@ -84,9 +115,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 2),
                   ),
                   const SizedBox(height: 28),
-                  _LabeledField(label: 'Username', controller: _userCtrl, obscure: false),
+                  _LabeledField(
+                    label: 'Name',
+                    controller: _nameCtrl,
+                    obscure: false,
+                    hint: 'Enter your name',
+                  ),
                   const SizedBox(height: 14),
-                  _LabeledField(label: 'Password', controller: _passCtrl, obscure: true, onSubmit: _submit),
+                  _LabeledField(
+                    label: 'PIN',
+                    controller: _pinCtrl,
+                    obscure: true,
+                    hint: '••••',
+                    numeric: true,
+                    onSubmit: _submit,
+                  ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Text(_error!, style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed)),
@@ -118,11 +161,15 @@ class _LabeledField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final bool obscure;
+  final String? hint;
+  final bool numeric;
   final VoidCallback? onSubmit;
   const _LabeledField({
     required this.label,
     required this.controller,
     required this.obscure,
+    this.hint,
+    this.numeric = false,
     this.onSubmit,
   });
 
@@ -139,8 +186,12 @@ class _LabeledField extends StatelessWidget {
         TextField(
           controller: controller,
           obscureText: obscure,
+          keyboardType: numeric ? TextInputType.number : TextInputType.text,
+          inputFormatters: numeric
+              ? [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)]
+              : null,
           style: AppTextStyles.body(size: 14),
-          decoration: InputDecoration(hintText: obscure ? '••••••••' : 'Enter username'),
+          decoration: InputDecoration(hintText: hint ?? (obscure ? '••••••••' : 'Enter username')),
           onSubmitted: onSubmit == null ? null : (_) => onSubmit!(),
         ),
       ],

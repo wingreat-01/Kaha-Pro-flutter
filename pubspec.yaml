@@ -13,13 +13,31 @@ dependencies:
   provider: ^6.1.2
   cupertino_icons: ^1.0.6
   image_picker: ^1.1.2
+  supabase_flutter: ^2.16.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/icon/icon.png
+    - assets/icon/icon_foreground.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#1E2126"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    background_color: "#1E2126"
+    theme_color: "#FFB020"
