@@ -35,6 +35,7 @@ class TransactionLineItem {
 /// confirmed. transactionNumber is the ledger-style identifier shown
 /// in the Transactions tab (e.g. "#00001").
 class Transaction {
+  final String? id; // Supabase row id — null only if somehow unsynced
   final String transactionNumber;
   final DateTime timestamp;
   final List<TransactionLineItem> items;
@@ -43,6 +44,7 @@ class Transaction {
   final double change;
 
   const Transaction({
+    this.id,
     required this.transactionNumber,
     required this.timestamp,
     required this.items,
