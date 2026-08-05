@@ -8,6 +8,8 @@ import 'state/product_provider.dart';
 import 'state/transaction_provider.dart';
 import 'state/user_provider.dart';
 import 'screens/login_screen.dart';
+import 'screens/store_setup_screen.dart';
+import 'screens/add_self_as_staff_screen.dart';
 import 'screens/home_shell.dart';
 import 'config/supabase_config.dart';
 
@@ -44,7 +46,33 @@ class KahaproApp extends StatefulWidget {
 }
 
 class _KahaproAppState extends State<KahaproApp> {
+  // PIN-level session — separate from the Supabase Auth session below.
+  // This is who's currently clocked in at the register.
   AppUser? _loggedInUser;
+
+  // Bumped to force the staff_users re-check after AddSelfAsStaffScreen
+  // finishes, since a plain setState() inside a StreamBuilder's own
+  // FutureBuilder wouldn't otherwise know to re-run the future.
+  int _staffCheckToken = 0;
+
+  late final Stream<AuthState> _authStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _authStream = Supabase.instance.client.auth.onAuthStateChange;
+  }
+
+  Future<bool> _hasStaffUsers() async {
+    // RLS scopes staff_users to the signed-in owner's store already
+    // (same assumption verify_staff_login's current_store_id() lookup
+    // relies on), so this is just "does any row come back at all."
+    final rows = await Supabase.instance.client
+        .from('staff_users')
+        .select('id')
+        .limit(1);
+    return (rows as List).isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,14 +80,65 @@ class _KahaproAppState extends State<KahaproApp> {
       title: 'Kahapro',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(),
-      home: _loggedInUser == null
-          ? LoginScreen(
-              onLogin: (user) => setState(() => _loggedInUser = user),
-            )
-          : HomeShell(
+      home: _loggedInUser != null
+          ? HomeShell(
               user: _loggedInUser!,
-              onLogout: () => setState(() => _loggedInUser = null),
+              onLogout: () {
+                // This clears the PIN-level session only. It does NOT
+                // call Supabase's signOut() — doing that would also
+                // drop the owner's store session and bounce the whole
+                // device back to StoreSetupScreen, which is wrong for
+                // "next staffer, same register." A real "sign out of
+                // this store" action (e.g. from Settings) is a
+                // separate, explicit control, not part of this flow.
+                setState(() => _loggedInUser = null);
+              },
+            )
+          : StreamBuilder<AuthState>(
+              stream: _authStream,
+              builder: (context, snapshot) {
+                final session = Supabase.instance.client.auth.currentSession;
+
+                if (session == null) {
+                  return const StoreSetupScreen();
+                }
+
+                return FutureBuilder<bool>(
+                  key: ValueKey(_staffCheckToken),
+                  future: _hasStaffUsers(),
+                  builder: (context, staffSnap) {
+                    if (staffSnap.connectionState != ConnectionState.done) {
+                      return const _RouteLoadingScreen();
+                    }
+                    if (staffSnap.hasError) {
+                      // Fails safe to the loading view rather than a
+                      // silent blank screen — a transient network blip
+                      // here shouldn't strand someone on first run.
+                      return const _RouteLoadingScreen();
+                    }
+                    if (staffSnap.data == false) {
+                      return AddSelfAsStaffScreen(
+                        onDone: () => setState(() => _staffCheckToken++),
+                      );
+                    }
+                    return LoginScreen(
+                      onLogin: (user) => setState(() => _loggedInUser = user),
+                    );
+                  },
+                );
+              },
             ),
+    );
+  }
+}
+
+class _RouteLoadingScreen extends StatelessWidget {
+  const _RouteLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
     );
   }
 }

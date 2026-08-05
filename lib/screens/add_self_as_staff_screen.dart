@@ -1,34 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/user.dart';
-import '../state/product_provider.dart';
 import '../theme/app_theme.dart';
 
-/// Staff PIN login (Phase C: shared owner session + PIN-gated
-/// staff_users table). Checked via the verify_staff_login() RPC
-/// instead of the old in-memory UserProvider list.
+/// Shown exactly once per store: right after a brand-new owner
+/// finishes signUp() on StoreSetupScreen, staff_users has zero rows
+/// for this store, so the normal PIN LoginScreen has nothing to
+/// check a PIN against. This screen collects Name + PIN and calls
+/// add_staff_user() to seed the owner's own staff record with role
+/// 'admin', then hands control back to main.dart via onDone so it
+/// can re-check staff_users and fall through to the PIN pad.
 ///
-/// Assumes a store-owner Supabase Auth session is already active —
-/// that gets established during first-run owner signup/sign-in, which
-/// is a separate screen not built yet. Without an active session,
-/// current_store_id() resolves to nothing server-side and every PIN
-/// would silently fail, so that case gets its own message below rather
-/// than surfacing as a confusing "Invalid name or PIN."
-class LoginScreen extends StatefulWidget {
-  final void Function(AppUser user) onLogin;
-  const LoginScreen({super.key, required this.onLogin});
+/// ASSUMPTION FLAGGED: add_staff_user()'s exact parameter names
+/// (staff_name / pin / role below) are inferred from the
+/// verify_staff_login() call shape in login_screen.dart -- worth
+/// confirming against the actual function signature before this
+/// compiles clean, since a mismatched param name fails at the RPC
+/// call, not at compile time.
+class AddSelfAsStaffScreen extends StatefulWidget {
+  final VoidCallback onDone;
+  const AddSelfAsStaffScreen({super.key, required this.onDone});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<AddSelfAsStaffScreen> createState() => _AddSelfAsStaffScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _AddSelfAsStaffScreenState extends State<AddSelfAsStaffScreen> {
   final _nameCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
-  String? _error;
+  final _confirmPinCtrl = TextEditingController();
+
   bool _loading = false;
+  String? _error;
 
   Future<void> _submit() async {
     setState(() {
@@ -38,58 +41,46 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final name = _nameCtrl.text.trim();
     final pin = _pinCtrl.text.trim();
+    final confirmPin = _confirmPinCtrl.text.trim();
 
     if (name.isEmpty || pin.isEmpty) {
       setState(() {
-        _error = 'Enter your name and PIN.';
+        _error = 'Enter your name and a PIN.';
         _loading = false;
       });
       return;
     }
-
-    if (Supabase.instance.client.auth.currentSession == null) {
+    if (pin.length < 4) {
       setState(() {
-        _error = 'No store session found. Sign in as the store owner first.';
+        _error = 'PIN needs to be at least 4 digits.';
+        _loading = false;
+      });
+      return;
+    }
+    if (pin != confirmPin) {
+      setState(() {
+        _error = "PINs don't match.";
         _loading = false;
       });
       return;
     }
 
     try {
-      final rows = await Supabase.instance.client.rpc(
-        'verify_staff_login',
-        params: {'staff_name': name, 'pin': pin},
-      ) as List;
-
-      if (rows.isEmpty) {
-        // Covers wrong name, wrong PIN, and a locked-out account —
-        // verify_staff_login deliberately doesn't distinguish these
-        // (see the schema comments), so neither does this message.
-        setState(() {
-          _error = 'Invalid name or PIN.';
-          _loading = false;
-        });
-        return;
-      }
-
-      final row = rows.first as Map<String, dynamic>;
-      final matched = AppUser(
-        id: row['id'] as String,
-        name: row['name'] as String,
-        role: row['role'] as String,
+      await Supabase.instance.client.rpc(
+        'add_staff_user',
+        params: {
+          'staff_name': name,
+          'pin': pin,
+          'role': 'admin',
+        },
       );
-
-      // Fetch-once-on-login (Phase D) — load this store's catalog
-      // before HomeShell shows.
-      await context.read<ProductProvider>().loadFromSupabase();
-
       if (!mounted) return;
       setState(() => _loading = false);
-      widget.onLogin(matched);
+      widget.onDone();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Something went wrong signing in. Please try again.';
+        _error = 'Something went wrong saving your staff account. Please try again.';
         _loading = false;
       });
     }
@@ -99,6 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _pinCtrl.dispose();
+    _confirmPinCtrl.dispose();
     super.dispose();
   }
 
@@ -109,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
+            constraints: const BoxConstraints(maxWidth: 380),
             child: Container(
               padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
               decoration: BoxDecoration(
@@ -128,36 +120,35 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: AppColors.slateBorder, width: 1),
                     ),
-                    child: const Icon(Icons.point_of_sale, color: AppColors.ledAmber, size: 26),
+                    child: const Icon(Icons.badge_outlined, color: AppColors.ledAmber, size: 26),
                   ),
                   const SizedBox(height: 12),
-                  RichText(
-                    text: TextSpan(
-                      style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, letterSpacing: 1.2),
-                      children: [
-                        const TextSpan(text: 'KAHA'),
-                        TextSpan(text: 'PRO', style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, color: AppColors.ledAmber, letterSpacing: 1.2)),
-                      ],
-                    ),
+                  Text(
+                    'ADD YOURSELF AS STAFF',
+                    style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, letterSpacing: 1.2),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'POINT OF SALE',
-                    style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 2),
+                    "You're set up as the store owner. Now create a\nPIN so you can clock in at the register.",
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
                   ),
-                  const SizedBox(height: 28),
-                  _LabeledField(
-                    label: 'Name',
-                    controller: _nameCtrl,
-                    obscure: false,
-                    hint: 'Enter your name',
-                  ),
+                  const SizedBox(height: 24),
+                  _StaffField(label: 'Your Name', controller: _nameCtrl, hint: 'e.g. Maria'),
                   const SizedBox(height: 14),
-                  _LabeledField(
+                  _StaffField(
                     label: 'PIN',
                     controller: _pinCtrl,
-                    obscure: true,
                     hint: '••••',
+                    obscure: true,
+                    numeric: true,
+                  ),
+                  const SizedBox(height: 14),
+                  _StaffField(
+                    label: 'Confirm PIN',
+                    controller: _confirmPinCtrl,
+                    hint: '••••',
+                    obscure: true,
                     numeric: true,
                     onSubmit: _submit,
                   ),
@@ -175,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               height: 18, width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF3A2600)),
                             )
-                          : const Text('Sign in'),
+                          : const Text('Save & continue'),
                     ),
                   ),
                 ],
@@ -188,18 +179,19 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class _LabeledField extends StatelessWidget {
+class _StaffField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
-  final bool obscure;
   final String? hint;
+  final bool obscure;
   final bool numeric;
   final VoidCallback? onSubmit;
-  const _LabeledField({
+
+  const _StaffField({
     required this.label,
     required this.controller,
-    required this.obscure,
     this.hint,
+    this.obscure = false,
     this.numeric = false,
     this.onSubmit,
   });
@@ -222,7 +214,7 @@ class _LabeledField extends StatelessWidget {
               ? [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)]
               : null,
           style: AppTextStyles.body(size: 14),
-          decoration: InputDecoration(hintText: hint ?? (obscure ? '••••••••' : 'Enter username')),
+          decoration: InputDecoration(hintText: hint),
           onSubmitted: onSubmit == null ? null : (_) => onSubmit!(),
         ),
       ],
