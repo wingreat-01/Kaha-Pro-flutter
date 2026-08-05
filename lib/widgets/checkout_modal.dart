@@ -44,6 +44,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   String? _error;
+  bool _submitting = false;
 
   double get _total => widget.cart.total;
 
@@ -115,27 +116,50 @@ class _CheckoutModalState extends State<CheckoutModal> {
       ? _quickRoundUpTargets
       : _billDenominations.where((amount) => amount >= _total).toList();
 
-  void _confirm() {
+  Future<void> _confirm() async {
     if (!_canConfirm) {
       setState(() => _error = 'Amount tendered is less than the total due.');
       return;
     }
+    if (_submitting) return; // guard double-tap while the request is in flight
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
     final tendered = _tendered!;
     final change = _change;
     final soldItems = widget.cart.items; // snapshot before clearing
-    context.read<TransactionProvider>().record(
-          cartItems: soldItems,
-          total: _total,
-          cashTendered: tendered,
-          change: change,
-        );
-    // Deduct stock right after the sale is logged, using the same
-    // pre-clear snapshot of cart lines the transaction was recorded
-    // from — keeps stock and the transaction log in sync with the
-    // same sale.
-    context.read<ProductProvider>().deductStockForSale(soldItems);
-    widget.cart.clear();
-    Navigator.of(context).pop(true);
+
+    try {
+      // record() now hits Supabase (record_transaction RPC), so this
+      // can fail — a dropped connection or RLS reject must NOT fall
+      // through to deducting stock / clearing the cart / closing the
+      // modal as if the sale went through.
+      await context.read<TransactionProvider>().record(
+            cartItems: soldItems,
+            total: _total,
+            cashTendered: tendered,
+            change: change,
+          );
+
+      if (!mounted) return;
+
+      // Deduct stock only once the sale is confirmed recorded, using
+      // the same pre-clear snapshot of cart lines the transaction was
+      // recorded from — keeps stock and the transaction log in sync
+      // with the same sale.
+      context.read<ProductProvider>().deductStockForSale(soldItems);
+      widget.cart.clear();
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = 'Could not save the sale — check your connection and try again.';
+      });
+    }
   }
 
   @override
@@ -245,12 +269,18 @@ class _CheckoutModalState extends State<CheckoutModal> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _confirm,
+                    onPressed: _submitting ? null : _confirm,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.tillGreen,
                       foregroundColor: Colors.white,
                     ),
-                    child: const Text('Confirm payment'),
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Confirm payment'),
                   ),
                 ),
               ],

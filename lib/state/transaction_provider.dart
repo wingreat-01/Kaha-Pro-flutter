@@ -1,13 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cart_item.dart';
 import '../models/transaction.dart';
 
-/// Transaction log for the Register screen. In-memory for now — Phase 3
-/// is expected to back this with persisted storage. Wrap the app with
+/// Transaction log for the Register screen. Backed by Supabase
+/// (`transactions` + `transaction_line_items`, written atomically via
+/// the `record_transaction` RPC). Wrap the app with
 /// ChangeNotifierProvider<TransactionProvider> in main.dart to use this.
 class TransactionProvider extends ChangeNotifier {
   final List<Transaction> _transactions = [];
-  int _counter = 0;
+  final _client = Supabase.instance.client;
 
   /// Newest first, for the Transactions tab list.
   List<Transaction> get transactions => List.unmodifiable(_transactions.reversed);
@@ -27,25 +29,90 @@ class TransactionProvider extends ChangeNotifier {
     return grouped.entries.map((e) => DaySummary(day: e.key, transactions: e.value)).toList();
   }
 
+  /// Fetch-once-on-login, same pattern as ProductProvider.loadFromSupabase().
+  /// Call this right after PIN sign-in, before the register screen shows.
+  /// Nested select pulls each transaction's line items in the same request.
+  Future<void> loadFromSupabase() async {
+    final rows = await _client
+        .from('transactions')
+        .select('*, transaction_line_items(*)')
+        .order('created_at');
+
+    _transactions
+      ..clear()
+      ..addAll(rows.map<Transaction>((row) => _fromRow(row as Map<String, dynamic>)));
+    notifyListeners();
+  }
+
   /// Records a completed sale. Call this with the cart's items BEFORE
   /// clearing the cart, so quantities are still intact.
-  Transaction record({
+  ///
+  /// Async — this now makes a network call (atomic insert of the
+  /// transactions row + all line items via the record_transaction RPC).
+  /// Callers must await this and handle a possible failure (network
+  /// drop, RLS reject) before clearing the cart or navigating away.
+  Future<Transaction> record({
     required List<CartItem> cartItems,
     required double total,
     required double cashTendered,
     required double change,
-  }) {
-    _counter += 1;
+  }) async {
+    final lineItems = cartItems.map(TransactionLineItem.fromCartItem).toList();
+    final itemsJson = lineItems
+        .map((li) => {
+              'product_id': li.productId,
+              'product_name': li.name,
+              'category': li.category,
+              'unit_price': li.price,
+              'quantity': li.quantity,
+              'line_total': li.lineTotal,
+            })
+        .toList();
+
+    final row = await _client.rpc('record_transaction', params: {
+      'p_total': total,
+      'p_cash_tendered': cashTendered,
+      'p_change_amount': change,
+      'p_cashier_name': null, // TODO: wire up once cashier identity is decided
+      'p_items': itemsJson,
+    }).single();
+
     final transaction = Transaction(
-      transactionNumber: '#${_counter.toString().padLeft(5, '0')}',
-      timestamp: DateTime.now(),
-      items: cartItems.map(TransactionLineItem.fromCartItem).toList(),
+      id: row['id'] as String,
+      transactionNumber: '#${(row['transaction_number'] as int).toString().padLeft(5, '0')}',
+      timestamp: DateTime.parse(row['created_at'] as String),
+      items: lineItems,
       total: total,
       cashTendered: cashTendered,
       change: change,
     );
+
     _transactions.add(transaction);
     notifyListeners();
     return transaction;
+  }
+
+  Transaction _fromRow(Map<String, dynamic> row) {
+    final lineRows = (row['transaction_line_items'] as List).cast<Map<String, dynamic>>();
+    return Transaction(
+      id: row['id'] as String,
+      transactionNumber: '#${(row['transaction_number'] as int).toString().padLeft(5, '0')}',
+      timestamp: DateTime.parse(row['created_at'] as String),
+      items: lineRows
+          .map((li) => TransactionLineItem(
+                // product_id is nullable on the table (a later product
+                // delete shouldn't orphan the historical line item) —
+                // default to '' rather than widen this field's type.
+                productId: li['product_id'] as String? ?? '',
+                name: li['product_name'] as String,
+                price: (li['unit_price'] as num).toDouble(),
+                quantity: li['quantity'] as int,
+                category: li['category'] as String,
+              ))
+          .toList(),
+      total: (row['total'] as num).toDouble(),
+      cashTendered: (row['cash_tendered'] as num).toDouble(),
+      change: (row['change_amount'] as num).toDouble(),
+    );
   }
 }
