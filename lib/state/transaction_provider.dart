@@ -149,7 +149,7 @@ class TransactionProvider extends ChangeNotifier {
         id: row['id'] as String,
         cashierName: row['cashier_name'] as String?,
         transactionNumber: '#${(row['transaction_number'] as int).toString().padLeft(5, '0')}',
-        timestamp: DateTime.parse(row['created_at'] as String),
+        timestamp: DateTime.parse(row['created_at'] as String).toLocal(),
         items: lineItems,
         total: total,
         cashTendered: cashTendered,
@@ -245,7 +245,7 @@ class TransactionProvider extends ChangeNotifier {
           id: row['id'] as String,
           cashierName: row['cashier_name'] as String?,
           transactionNumber: '#${(row['transaction_number'] as int).toString().padLeft(5, '0')}',
-          timestamp: DateTime.parse(row['created_at'] as String),
+          timestamp: DateTime.parse(row['created_at'] as String).toLocal(),
           items: pending.items,
           total: pending.total,
           cashTendered: pending.cashTendered,
@@ -293,7 +293,7 @@ class TransactionProvider extends ChangeNotifier {
       id: row['id'] as String,
       cashierName: row['cashier_name'] as String?,
       transactionNumber: '#${(row['transaction_number'] as int).toString().padLeft(5, '0')}',
-      timestamp: DateTime.parse(row['created_at'] as String),
+      timestamp: DateTime.parse(row['created_at'] as String).toLocal(),
       items: lineRows
           .map((li) => TransactionLineItem(
                 // product_id is nullable on the table (a later product

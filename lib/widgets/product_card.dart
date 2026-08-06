@@ -88,7 +88,7 @@ class _ProductCardState extends State<ProductCard> {
                         ),
                       ],
               ),
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 14),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               child: Column(
                 children: [
                   Expanded(
@@ -98,9 +98,12 @@ class _ProductCardState extends State<ProductCard> {
                         child: imageBytes != null
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(16),
-                                child: Image.memory(
-                                  imageBytes,
-                                  fit: BoxFit.cover,
+                                child: Container(
+                                  color: Colors.black.withOpacity(0.15),
+                                  child: Image.memory(
+                                    imageBytes,
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               )
                             : FittedBox(
@@ -112,7 +115,7 @@ class _ProductCardState extends State<ProductCard> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   SizedBox(
                     height: 34, // fixed slot for up to 2 lines — keeps emoji/name/price
                                 // aligned at the same height on every card, regardless
