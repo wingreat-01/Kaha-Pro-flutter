@@ -1,14 +1,11 @@
-import 'dart:typed_data';
-
 class Product {
   final String id;
   final String name;
   final double price;
   final String category;
-  final String? emoji; // fallback placeholder art when there's no imageBytes
-  final Uint8List? imageBytes; // user-uploaded product photo, in-memory for
-                                // now — move to Supabase Storage once that
-                                // integration lands (see migration plan)
+  final String? emoji; // fallback placeholder art when there's no imageUrl
+  final String? imageUrl; // public Supabase Storage URL for the uploaded
+                           // product photo, e.g. product-images/{uid}/{id}.jpg
   final int stockQty; // current on-hand count, adjusted via InventoryPanel
                        // or automatically on checkout
   final int lowStockThreshold; // stockQty at/below this shows a LOW badge
@@ -19,7 +16,7 @@ class Product {
     required this.price,
     required this.category,
     this.emoji,
-    this.imageBytes,
+    this.imageUrl,
     this.stockQty = 0,
     this.lowStockThreshold = 5,
   });
@@ -31,7 +28,7 @@ class Product {
     double? price,
     String? category,
     String? emoji,
-    Uint8List? imageBytes,
+    String? imageUrl,
     int? stockQty,
     int? lowStockThreshold,
   }) {
@@ -41,7 +38,7 @@ class Product {
       price: price ?? this.price,
       category: category ?? this.category,
       emoji: emoji ?? this.emoji,
-      imageBytes: imageBytes ?? this.imageBytes,
+      imageUrl: imageUrl ?? this.imageUrl,
       stockQty: stockQty ?? this.stockQty,
       lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
     );

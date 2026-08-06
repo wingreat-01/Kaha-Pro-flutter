@@ -15,6 +15,7 @@ import '../models/transaction.dart';
 /// login (matches today's single-till, single-device usage).
 class ProductProvider extends ChangeNotifier {
   static const String uncategorized = 'Uncategorized';
+  static const String _imageBucket = 'product-images';
 
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -40,6 +41,25 @@ class ProductProvider extends ChangeNotifier {
 
   int productCountForCategory(String name) {
     return _products.where((p) => p.category == name).length;
+  }
+
+  /// Uploads a product photo to Supabase Storage and returns its public
+  /// URL. Path is scoped by the signed-in owner's auth uid (this app's
+  /// actual tenant boundary — a shared owner session per store, per
+  /// PIN-gated staff auth) rather than a separate store_id, so the
+  /// Storage RLS policy can check auth.uid() directly against the
+  /// object's folder without needing a join back to the store table.
+  /// upsert: true so re-uploading a photo for the same product just
+  /// overwrites the old file instead of accumulating orphaned ones.
+  Future<String> _uploadProductImage(String productId, Uint8List bytes) async {
+    final uid = _client.auth.currentUser!.id;
+    final path = '$uid/$productId.jpg';
+    await _client.storage.from(_imageBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+        );
+    return _client.storage.from(_imageBucket).getPublicUrl(path);
   }
 
   /// Fetches this store's categories and products. Call once, right
@@ -93,7 +113,7 @@ class ProductProvider extends ChangeNotifier {
       price: (row['price'] as num).toDouble(),
       category: categoryName,
       emoji: row['emoji'] as String?,
-      imageBytes: null, // image_path/Storage wiring is Phase H
+      imageUrl: row['image_url'] as String?,
       stockQty: row['stock_qty'] as int,
       lowStockThreshold: row['low_stock_threshold'] as int,
     );
@@ -219,13 +239,27 @@ class ProductProvider extends ChangeNotifier {
           .select()
           .single();
 
+      final newId = row['id'] as String;
+      String? imageUrl;
+      if (imageBytes != null) {
+        try {
+          imageUrl = await _uploadProductImage(newId, imageBytes);
+          await _client.from('products').update({'image_url': imageUrl}).eq('id', newId);
+        } catch (e) {
+          // Product row is already created — don't fail the whole add
+          // over a photo upload hiccup. It just comes in without a
+          // photo; the camera badge in edit mode lets it be added again.
+          imageUrl = null;
+        }
+      }
+
       _products.add(Product(
-        id: row['id'] as String,
+        id: newId,
         name: name,
         price: price,
         category: category,
         emoji: (emoji == null || emoji.trim().isEmpty) ? null : emoji.trim(),
-        imageBytes: imageBytes, // local only until Phase H (Storage) lands
+        imageUrl: imageUrl,
         stockQty: stockQty,
         lowStockThreshold: lowStockThreshold,
       ));
@@ -251,13 +285,20 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  /// Local-only for now — Phase H wires this to Supabase Storage
-  /// (image_path column + signed URLs, same pattern as UpaPro's
-  /// tenant-docs bucket). Photos won't survive a reload until then.
-  void updateProductImage(String id, Uint8List? imageBytes) {
+  /// Uploads a new/replacement photo for an existing product and
+  /// persists its URL. Call this from the camera badge in edit mode
+  /// (ProductCard.onImageSelected). Photo won't show until this
+  /// resolves — there's no optimistic local preview here, since the
+  /// picker's own loading spinner already covers that gap, and we'd
+  /// rather not show a picked photo that then silently fails to save.
+  Future<void> updateProductImage(String id, Uint8List imageBytes) async {
     final index = _products.indexWhere((p) => p.id == id);
     if (index < 0) return;
-    _products[index] = _products[index].copyWith(imageBytes: imageBytes);
+
+    final imageUrl = await _uploadProductImage(id, imageBytes);
+    await _client.from('products').update({'image_url': imageUrl}).eq('id', id);
+
+    _products[index] = _products[index].copyWith(imageUrl: imageUrl);
     notifyListeners();
   }
 

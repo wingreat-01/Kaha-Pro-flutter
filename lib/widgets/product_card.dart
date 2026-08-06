@@ -53,7 +53,7 @@ class _ProductCardState extends State<ProductCard> {
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final imageBytes = product.imageBytes;
+    final imageUrl = product.imageUrl;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -95,14 +95,30 @@ class _ProductCardState extends State<ProductCard> {
                     child: Center(
                       child: AspectRatio(
                         aspectRatio: 1,
-                        child: imageBytes != null
+                        child: imageUrl != null
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(16),
                                 child: Container(
                                   color: Colors.black.withOpacity(0.15),
-                                  child: Image.memory(
-                                    imageBytes,
+                                  child: Image.network(
+                                    imageUrl,
                                     fit: BoxFit.contain,
+                                    loadingBuilder: (context, child, progress) {
+                                      if (progress == null) return child;
+                                      return const Center(
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) => Center(
+                                      child: Text(
+                                        product.emoji ?? '🛒',
+                                        style: const TextStyle(fontSize: 40),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               )
