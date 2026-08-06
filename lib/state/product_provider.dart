@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
+import '../models/transaction.dart';
 
 /// Product catalog state, backed by Supabase (categories/products
 /// tables). Phase D of the Supabase migration — replaces the mock-data
@@ -294,6 +295,18 @@ class ProductProvider extends ChangeNotifier {
   Future<void> deductStockForSale(List<CartItem> soldItems) async {
     for (final item in soldItems) {
       await adjustStock(item.product.id, -item.quantity);
+    }
+  }
+
+  /// Same deduction, but from a queued offline sale's saved
+  /// TransactionLineItem snapshots instead of live CartItems — used
+  /// when a sale that couldn't reach Supabase at checkout time finally
+  /// syncs later. By then there's no CartItem/Product object left,
+  /// only the flat sale record TransactionProvider persisted to disk.
+  Future<void> deductStockForLineItems(List<TransactionLineItem> items) async {
+    for (final item in items) {
+      if (item.productId.isEmpty) continue; // product was deleted before this synced
+      await adjustStock(item.productId, -item.quantity);
     }
   }
 

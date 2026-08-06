@@ -40,14 +40,14 @@ class _HomeShellState extends State<HomeShell> {
   Widget _body() {
     switch (_section) {
       case _Section.register:
-        return const RegisterScreen();
+        return RegisterScreen(cashierName: widget.user.name);
       case _Section.transactions:
         return const TransactionsPanel();
       case _Section.settings:
         // Defensive fallback — the gear icon that sets this is hidden
         // entirely for non-admins, so this only matters if _section
         // somehow ends up here some other way.
-        return _isAdmin ? const SettingsPanel() : const RegisterScreen();
+        return _isAdmin ? const SettingsPanel() : RegisterScreen(cashierName: widget.user.name);
     }
   }
 

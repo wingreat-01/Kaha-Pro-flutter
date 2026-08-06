@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user.dart';
 import '../state/product_provider.dart';
+import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Staff PIN login (Phase C: shared owner session + PIN-gated
@@ -92,9 +94,26 @@ class _LoginScreenState extends State<LoginScreen> {
         role: _parseRole(row['role'] as String?),
       );
 
-      // Fetch-once-on-login (Phase D) — load this store's catalog
-      // before HomeShell shows.
-      await context.read<ProductProvider>().loadFromSupabase();
+      // Fetch-once-on-login (Phase D + Phase F) — load this store's
+      // catalog and transaction history before HomeShell shows. Run in
+      // parallel since neither depends on the other's result.
+      await Future.wait([
+        context.read<ProductProvider>().loadFromSupabase(),
+        context.read<TransactionProvider>().loadFromSupabase(),
+      ]);
+
+      // Now that both are loaded, retry anything queued while offline.
+      // Wired here (rather than inside TransactionProvider itself) so
+      // stock deduction for a newly-synced sale can be triggered via
+      // ProductProvider without the two providers needing to reference
+      // each other directly. Fire-and-forget — login shouldn't block
+      // on however long a queue of offline sales takes to replay.
+      final productProvider = context.read<ProductProvider>();
+      unawaited(
+        context.read<TransactionProvider>().syncPending(
+              deductStock: (items) => productProvider.deductStockForLineItems(items),
+            ),
+      );
 
       if (!mounted) return;
       setState(() => _loading = false);

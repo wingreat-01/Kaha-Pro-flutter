@@ -35,7 +35,9 @@ class TransactionLineItem {
 /// confirmed. transactionNumber is the ledger-style identifier shown
 /// in the Transactions tab (e.g. "#00001").
 class Transaction {
-  final String? id; // Supabase row id — null only if somehow unsynced
+  final String? id; // Supabase row id — null until this sale has synced
+  final String? localId; // set only on unsynced rows — matches a PendingSale
+  final String? cashierName; // null on older rows recorded before this was captured
   final String transactionNumber;
   final DateTime timestamp;
   final List<TransactionLineItem> items;
@@ -45,6 +47,8 @@ class Transaction {
 
   const Transaction({
     this.id,
+    this.localId,
+    this.cashierName,
     required this.transactionNumber,
     required this.timestamp,
     required this.items,
@@ -52,6 +56,10 @@ class Transaction {
     required this.cashTendered,
     required this.change,
   });
+
+  /// True for a sale that's been recorded locally (queued while
+  /// offline) but hasn't reached Supabase yet.
+  bool get isPending => id == null;
 
   int get itemCount => items.fold(0, (sum, item) => sum + item.quantity);
 }

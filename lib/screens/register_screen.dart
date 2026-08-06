@@ -23,7 +23,8 @@ import '../widgets/checkout_modal.dart';
 /// icons, Users nested inside Settings). This screen now only ever
 /// shows the product grid, filtered by real category.
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  final String? cashierName;
+  const RegisterScreen({super.key, this.cashierName});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -65,17 +66,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _onCheckout(BuildContext context, CartProvider cart) {
-    CheckoutModal.show(context, cart, () {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.slate,
-          content: Text(
-            'Sale completed',
-            style: AppTextStyles.body(size: 13, color: AppColors.tillGreen),
+    CheckoutModal.show(
+      context,
+      cart,
+      cashierName: widget.cashierName,
+      onComplete: (result) {
+        final synced = result == CheckoutResult.completedSynced;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.slate,
+            content: Text(
+              synced ? 'Sale completed' : 'Sale saved offline — will sync when back online',
+              style: AppTextStyles.body(size: 13, color: synced ? AppColors.tillGreen : AppColors.ledAmber),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 
   void _openAddProductDialog(BuildContext context, ProductProvider catalog) {

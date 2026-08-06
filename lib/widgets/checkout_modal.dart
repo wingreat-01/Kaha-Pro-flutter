@@ -6,34 +6,44 @@ import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 import 'led_total.dart';
 
+/// Result of the checkout flow. A queued sale still counts as
+/// success from the cashier's point of view (cart cleared, stock
+/// deducted) — completedSynced vs completedQueued just tells the
+/// caller which message to show, not whether checkout worked.
+enum CheckoutResult { cancelled, completedSynced, completedQueued }
+
 /// Pass C checkout modal: cash payment entry + live change calculation,
 /// reusing the LedTotal readout for both the amount due and the change
 /// owed. Open via [CheckoutModal.show] from the "Checkout" button in
 /// CartSidePanel / CartBottomBar.
 class CheckoutModal extends StatefulWidget {
   final CartProvider cart;
+  final String? cashierName;
 
-  const CheckoutModal({super.key, required this.cart});
+  const CheckoutModal({super.key, required this.cart, this.cashierName});
 
-  /// Opens the modal. Returns true if payment was confirmed (cart is
-  /// cleared before returning); returns false/null if cancelled.
-  /// If [onComplete] is provided, it's called once, after the dialog
-  /// closes, only when payment was confirmed — use it for post-sale
-  /// side effects like a confirmation snackbar.
-  static Future<bool?> show(
+  /// Opens the modal. Returns the outcome — cancelled, or completed
+  /// (synced immediately or queued offline). If [onComplete] is
+  /// provided, it's called once, after the dialog closes, only when
+  /// checkout actually completed — use it for post-sale side effects
+  /// like a confirmation snackbar, and check the result to word it
+  /// correctly for a queued vs. synced sale.
+  static Future<CheckoutResult> show(
     BuildContext context,
-    CartProvider cart, [
-    VoidCallback? onComplete,
-  ]) async {
-    final result = await showDialog<bool>(
+    CartProvider cart, {
+    String? cashierName,
+    void Function(CheckoutResult result)? onComplete,
+  }) async {
+    final result = await showDialog<CheckoutResult>(
       context: context,
       barrierColor: Colors.black54,
-      builder: (context) => CheckoutModal(cart: cart),
+      builder: (context) => CheckoutModal(cart: cart, cashierName: cashierName),
     );
-    if (result == true) {
-      onComplete?.call();
+    final resolved = result ?? CheckoutResult.cancelled;
+    if (resolved != CheckoutResult.cancelled) {
+      onComplete?.call(resolved);
     }
-    return result;
+    return resolved;
   }
 
   @override
@@ -133,26 +143,38 @@ class _CheckoutModalState extends State<CheckoutModal> {
     final soldItems = widget.cart.items; // snapshot before clearing
 
     try {
-      // record() now hits Supabase (record_transaction RPC), so this
-      // can fail — a dropped connection or RLS reject must NOT fall
-      // through to deducting stock / clearing the cart / closing the
-      // modal as if the sale went through.
-      await context.read<TransactionProvider>().record(
+      final result = await context.read<TransactionProvider>().record(
             cartItems: soldItems,
             total: _total,
             cashTendered: tendered,
             change: change,
+            cashierName: widget.cashierName,
           );
 
       if (!mounted) return;
 
-      // Deduct stock only once the sale is confirmed recorded, using
-      // the same pre-clear snapshot of cart lines the transaction was
-      // recorded from — keeps stock and the transaction log in sync
-      // with the same sale.
-      context.read<ProductProvider>().deductStockForSale(soldItems);
+      // Deduct stock once the sale is at least recorded (synced or
+      // queued) — using the same pre-clear snapshot of cart lines the
+      // transaction was recorded from, keeping stock and the
+      // transaction log in sync with the same sale.
+      //
+      // Awaited (not fire-and-forget) so this try/catch actually
+      // catches a failure here instead of letting it become an
+      // unhandled Future rejection. Expected to fail/roll-back when
+      // this sale itself just got queued offline — that's fine, since
+      // TransactionProvider.syncPending() retries the deduction (via
+      // deductStockForLineItems) once the sale actually syncs. See
+      // login_screen.dart for that wiring.
+      try {
+        await context.read<ProductProvider>().deductStockForSale(soldItems);
+      } catch (_) {
+        // Swallowed deliberately — see note above.
+      }
+
       widget.cart.clear();
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(
+        result.isPending ? CheckoutResult.completedQueued : CheckoutResult.completedSynced,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -201,7 +223,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
                     ),
                     const Spacer(),
                     IconButton(
-                      onPressed: () => Navigator.of(context).pop(false),
+                      onPressed: () => Navigator.of(context).pop(CheckoutResult.cancelled),
                       icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
                       splashRadius: 18,
                     ),

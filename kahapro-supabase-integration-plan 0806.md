@@ -115,11 +115,15 @@ pgcrypto into the `extensions` schema, not `public`).
       correct `product_id`, `product_name`, `category`, pricing.
 
 #### Phase F follow-up (not yet done, blocks calling this fully wired)
-- [x] `TransactionProvider.loadFromSupabase()` — **RESOLVED.** Wired
-      into `login_screen.dart`, run in parallel with
-      `ProductProvider.loadFromSupabase()` via `Future.wait([...])`
-      right after `verify_staff_login()` succeeds, before
-      `widget.onLogin(matched)` is called.
+- [ ] `TransactionProvider.loadFromSupabase()` is not called from
+      anywhere yet — the Transactions tab will be empty in the running
+      app until it's wired in. Believed to belong in
+      `screens/login_screen.dart`, right alongside wherever
+      `ProductProvider.loadFromSupabase()` is already awaited after
+      `verify_staff_login()` succeeds and before `onLogin(user)` is
+      called — `login_screen.dart` needed to confirm the exact spot
+      and pattern before adding this, rather than guessing and
+      duplicating/missing its existing loading or error handling.
 - [x] `cashier_name` — **RESOLVED.** Now captured end-to-end:
       `HomeShell` (holds the logged-in `AppUser`) passes
       `cashierName: widget.user.name` into `RegisterScreen`, which
@@ -134,63 +138,7 @@ pgcrypto into the `extensions` schema, not `public`).
       `{String? cashierName, VoidCallback? onComplete}` — the one
       existing call site (`register_screen.dart`) was updated to match.
 
-#### Phase F extension — offline queue (added after F was otherwise closed)
-The "Offline behavior — still an open decision" line above was resolved
-this round, at least for checkout: a sale that can't reach Supabase no
-longer blocks checkout or gets lost.
-
-- [x] `models/pending_sale.dart` (new) — a locally-persisted sale
-      snapshot (items, totals, cashier, timestamp), JSON-encoded to
-      SharedPreferences as a single list under one key.
-- [x] `models/transaction.dart` — added `localId` (tags an unsynced
-      row back to its queue entry) and `isPending` getter (`id == null`).
-- [x] `TransactionProvider.record()` — on a network-shaped failure
-      (anything except `PostgrestException`/`AuthException`, since
-      those mean the server actually responded and a retry won't
-      help), queues the sale locally instead of throwing, and returns
-      a `PENDING` placeholder `Transaction` rather than failing
-      checkout. A real rejection still rethrows as before.
-- [x] `TransactionProvider.syncPending({deductStock})` — replays the
-      queue against `record_transaction`; on success swaps the
-      placeholder for the real synced row and (via the passed-in
-      callback) triggers stock deduction for that sale at the moment
-      it actually lands, not before.
-- [x] `checkout_modal.dart` — `CheckoutResult` enum
-      (`cancelled` / `completedSynced` / `completedQueued`) threads
-      through `show()`'s `onComplete` so the caller can word the
-      confirmation differently for a queued sale. Also fixed a
-      fire-and-forget bug this round introduced: the stock-deduction
-      call wasn't being awaited, so its own try/catch wasn't actually
-      catching anything.
-- [x] `product_provider.dart` — added
-      `deductStockForLineItems(List<TransactionLineItem>)`, a
-      snapshot-based twin to `deductStockForSale` for use when a
-      queued sale syncs later and there's no live `CartItem`/`Product`
-      left, only the flat record that was persisted to disk.
-- [x] `login_screen.dart` — `loadFromSupabase()` no longer
-      auto-triggers `syncPending()` internally (would've run without
-      the stock-deduction callback wired in); the caller now calls
-      `syncPending(deductStock: ...)` explicitly right after both
-      providers finish loading.
-- [x] `register_screen.dart` / `home_shell.dart` — updated for the
-      `CheckoutResult`-based `onComplete` signature and cashier-name
-      threading (see the cashier_name entry above).
-
-**Explicitly NOT done / still open on the offline queue:**
-- No retry trigger faster than "next login" — a sale queued mid-shift
-  stays queued until the next sign-in, not the moment connectivity
-  actually returns. A connectivity-listener package (e.g.
-  `connectivity_plus`) would close this; not added.
-- No give-up/discard path for a permanently-failing queued entry (e.g.
-  a product deleted between queueing and syncing) — it retries forever
-  with no manual "discard" option.
-- Nothing in the UI surfaces `pendingCount` yet (a badge, a banner) —
-  the only visible sign of a queued sale right now is its `#PENDING`
-  row in the Transactions tab.
-- Not yet tested against a real device with real airplane-mode /
-  flaky-wifi conditions — only reasoned through, not run.
-
-
+### Phase G — Migrate `UserProvider` / staff accounts — DONE
 - [x] First-run owner setup: `StoreSetupScreen` (create store via
       `signUp()` + `store_name` metadata → `handle_new_user` trigger
       creates `stores`/`store_members`/seeded `Uncategorized` category
