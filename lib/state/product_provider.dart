@@ -244,11 +244,22 @@ class ProductProvider extends ChangeNotifier {
       if (imageBytes != null) {
         try {
           imageUrl = await _uploadProductImage(newId, imageBytes);
-          await _client.from('products').update({'image_url': imageUrl}).eq('id', newId);
+          final updated = await _client
+              .from('products')
+              .update({'image_url': imageUrl})
+              .eq('id', newId)
+              .select();
+          if ((updated as List).isEmpty) {
+            // RLS silently blocked the update — no exception, but the
+            // row wasn't touched. Surface this like any other failure
+            // rather than pretending it worked.
+            throw StateError('image_url update matched no rows (RLS?) for product $newId');
+          }
         } catch (e) {
           // Product row is already created — don't fail the whole add
           // over a photo upload hiccup. It just comes in without a
           // photo; the camera badge in edit mode lets it be added again.
+          debugPrint('addProduct: image upload/save failed for $newId: $e');
           imageUrl = null;
         }
       }
@@ -296,7 +307,19 @@ class ProductProvider extends ChangeNotifier {
     if (index < 0) return;
 
     final imageUrl = await _uploadProductImage(id, imageBytes);
-    await _client.from('products').update({'image_url': imageUrl}).eq('id', id);
+    final updated = await _client
+        .from('products')
+        .update({'image_url': imageUrl})
+        .eq('id', id)
+        .select();
+    if ((updated as List).isEmpty) {
+      // RLS blocked the update — Supabase doesn't throw for this, it
+      // just matches zero rows and returns success. Without this
+      // check, the photo would show in this session (from the local
+      // copyWith below) but silently never actually persist, which is
+      // exactly the bug that motivated adding this check.
+      throw StateError('image_url update matched no rows (RLS?) for product $id');
+    }
 
     _products[index] = _products[index].copyWith(imageUrl: imageUrl);
     notifyListeners();

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
@@ -93,7 +94,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         existingCategories: existing,
         initialCategory: _selectedCategory,
         onSubmit: ({required name, required price, required category, emoji, imageBytes}) {
-          catalog.addProduct(name: name, price: price, category: category, emoji: emoji, imageBytes: imageBytes);
+          catalog
+              .addProduct(name: name, price: price, category: category, emoji: emoji, imageBytes: imageBytes)
+              .catchError((e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: AppColors.slate,
+                content: Text(
+                  'Couldn\'t add product — try again',
+                  style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+                ),
+              ),
+            );
+          });
         },
       ),
     );
@@ -146,14 +160,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  void _onImageSelected(BuildContext context, ProductProvider catalog, Product product, Uint8List bytes) {
+    catalog.updateProductImage(product.id, bytes).catchError((e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.slate,
+          content: Text(
+            'Photo upload failed — try again',
+            style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+          ),
+        ),
+      );
+    });
+  }
+
   Widget _buildGrid(BuildContext context, CartProvider cart, ProductProvider catalog, double gridWidth) {
     final crossAxisCount = gridWidth < 480
         ? 2
-        : gridWidth < 900
+        : gridWidth < 800
             ? 3
-            : gridWidth < 1300
+            : gridWidth < 1050
                 ? 4
-                : 5;
+                : gridWidth < 1300
+                    ? 5
+                    : gridWidth < 1600
+                        ? 6
+                        : 7;
 
     final products = _filtered(catalog);
 
@@ -187,7 +220,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 isEditMode: _editMode,
                 onTap: () => cart.add(product),
                 onDelete: () => _confirmDelete(context, catalog, product),
-                onImageSelected: (bytes) => catalog.updateProductImage(product.id, bytes),
+                onImageSelected: (bytes) => _onImageSelected(context, catalog, product, bytes),
               );
             },
           ),

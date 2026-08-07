@@ -103,26 +103,26 @@ class CartBottomBar extends StatelessWidget {
     return GestureDetector(
       onTap: () => _expand(context),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
         decoration: BoxDecoration(
           color: AppColors.slate,
           border: Border(top: BorderSide(color: AppColors.slateBorder, width: 1)),
         ),
         child: Row(
           children: [
-            Icon(Icons.shopping_bag_outlined, color: AppColors.ledAmber, size: 20),
-            const SizedBox(width: 8),
+            Icon(Icons.shopping_bag_outlined, color: AppColors.ledAmber, size: 24),
+            const SizedBox(width: 10),
             Text(
               '${cart.itemCount} item${cart.itemCount == 1 ? '' : 's'}',
-              style: AppTextStyles.body(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary),
+              style: AppTextStyles.body(size: 15, weight: FontWeight.w600, color: AppColors.textPrimary),
             ),
             const Spacer(),
             Text(
               '₱${cart.total.toStringAsFixed(2)}',
-              style: AppTextStyles.mono(size: 16, weight: FontWeight.w700, color: AppColors.ledAmber),
+              style: AppTextStyles.mono(size: 19, weight: FontWeight.w700, color: AppColors.ledAmber),
             ),
-            const SizedBox(width: 6),
-            Icon(Icons.keyboard_arrow_up, color: AppColors.textMuted, size: 20),
+            const SizedBox(width: 8),
+            Icon(Icons.keyboard_arrow_up, color: AppColors.textMuted, size: 24),
           ],
         ),
       ),
