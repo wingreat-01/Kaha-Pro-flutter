@@ -18,11 +18,28 @@ class AddProductDialog extends StatefulWidget {
     Uint8List? imageBytes,
   }) onSubmit;
 
+  /// This store's total-product cap for its plan (ProductProvider.
+  /// productLimit) — null means unlimited/unknown, in which case the
+  /// dialog behaves exactly as before (no counter, no lock screen).
+  final int? productLimit;
+
+  /// Current total product count (ProductProvider.productCount).
+  /// Ignored when [productLimit] is null.
+  final int currentProductCount;
+
+  /// Called when the user taps "Upgrade" on the limit-reached screen.
+  /// Optional so this dialog doesn't need to know how upgrade
+  /// navigation works yet — wire it up once that screen exists.
+  final VoidCallback? onUpgradeTap;
+
   const AddProductDialog({
     super.key,
     required this.existingCategories,
     required this.onSubmit,
     this.initialCategory,
+    this.productLimit,
+    this.currentProductCount = 0,
+    this.onUpgradeTap,
   });
 
   @override
@@ -115,8 +132,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
     Navigator.of(context).pop();
   }
 
+  bool get _atLimit =>
+      widget.productLimit != null && widget.currentProductCount >= widget.productLimit!;
+
   @override
   Widget build(BuildContext context) {
+    if (_atLimit) return _buildLimitReachedDialog(context);
+
     return Dialog(
       backgroundColor: AppColors.slate,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -131,6 +153,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 'ADD PRODUCT',
                 style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.5),
               ),
+              if (widget.productLimit != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${widget.currentProductCount}/${widget.productLimit} products used',
+                  style: AppTextStyles.mono(size: 10.5, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 0.5),
+                ),
+              ],
               const SizedBox(height: 18),
               _field('Name', _nameCtrl, hint: 'e.g. Bottled Water'),
               const SizedBox(height: 14),
@@ -240,6 +269,50 @@ class _AddProductDialogState extends State<AddProductDialog> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLimitReachedDialog(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.slate,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PRODUCT LIMIT REACHED',
+              style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.ledgerRed, letterSpacing: 1.5),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              "You've used all ${widget.productLimit} products on your current plan. "
+              'Upgrade to add more.',
+              style: AppTextStyles.body(size: 13.5, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onUpgradeTap?.call();
+                  },
+                  child: const Text('Upgrade'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

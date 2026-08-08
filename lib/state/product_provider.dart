@@ -13,14 +13,48 @@ import '../models/transaction.dart';
 /// [loadFromSupabase] right after a successful sign-in and before
 /// showing HomeShell; nothing auto-refreshes after that until the next
 /// login (matches today's single-till, single-device usage).
+/// Thrown by [ProductProvider.addProduct] when the store is at its
+/// plan's product cap — either caught locally before any network call
+/// (the common case), or surfaced from the server-side
+/// `enforce_product_limit` Postgres trigger (errcode P0001) if the
+/// local check and the server ever disagree (e.g. plan changed on
+/// another device, or this session's plan hasn't loaded yet). The
+/// trigger is the real gate; this class exists so UI code can catch a
+/// specific type instead of pattern-matching on PostgrestException.
+class ProductLimitExceededException implements Exception {
+  final String message;
+  const ProductLimitExceededException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class ProductProvider extends ChangeNotifier {
   static const String uncategorized = 'Uncategorized';
   static const String _imageBucket = 'product-images';
+
+  /// Per-plan total-product caps (all categories combined) — mirrors
+  /// the `product_limit()` function backing the Postgres trigger. This
+  /// copy is UI-only (for the live counter/lock in AddProductDialog);
+  /// the trigger is what actually enforces it. null = unlimited.
+  static const Map<String, int?> _productLimits = {
+    'free': 5,
+    'basic': 30,
+    'pro': null,
+  };
 
   final SupabaseClient _client = Supabase.instance.client;
 
   List<Product> _products = [];
   final List<String> _categoryNames = [];
+
+  /// Null until [loadFromSupabase] fetches it, or if that fetch fails.
+  /// Treated as "unknown" rather than defaulting to 'free', so a fetch
+  /// hiccup never falsely locks a paying Basic/Pro store out of adding
+  /// products in the UI — the trigger still enforces the real cap
+  /// regardless of whether this loaded.
+  String? _plan;
+  String? get plan => _plan;
 
   /// category name -> category id, needed since the DB stores
   /// products.category_id (a FK), while the rest of the app works with
@@ -41,6 +75,26 @@ class ProductProvider extends ChangeNotifier {
 
   int productCountForCategory(String name) {
     return _products.where((p) => p.category == name).length;
+  }
+
+  /// This store's total-product cap for its current plan. Null means
+  /// either Pro (genuinely unlimited) or the plan hasn't loaded yet —
+  /// callers that need to tell those apart should check [plan] too.
+  int? get productLimit => _plan == null ? null : _productLimits[_plan];
+
+  int get productCount => _products.length;
+
+  bool get isAtProductLimit {
+    final limit = productLimit;
+    return limit != null && productCount >= limit;
+  }
+
+  /// Null means unlimited (or plan not loaded). Never negative.
+  int? get remainingProductSlots {
+    final limit = productLimit;
+    if (limit == null) return null;
+    final remaining = limit - productCount;
+    return remaining < 0 ? 0 : remaining;
   }
 
   /// Uploads a product photo to Supabase Storage and returns its public
@@ -71,6 +125,19 @@ class ProductProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Drives the product-count cap shown in the UI (productLimit /
+      // isAtProductLimit above). Isolated in its own try/catch — a
+      // failure here shouldn't take down the whole catalog load, and
+      // leaving _plan null just means the UI won't show a cap this
+      // session while the enforce_product_limit trigger still governs
+      // actual inserts.
+      try {
+        final storeRow = await _client.from('stores').select('plan').single();
+        _plan = storeRow['plan'] as String?;
+      } catch (e) {
+        debugPrint('loadFromSupabase: could not fetch store plan: $e');
+      }
+
       final categoryRows = await _client
           .from('categories')
           .select('id, name, is_protected')
@@ -219,6 +286,19 @@ class ProductProvider extends ChangeNotifier {
     int stockQty = 0,
     int lowStockThreshold = 5,
   }) async {
+    // Local pre-check — catches the common case instantly, no network
+    // round trip, and avoids creating a new category (addCategory
+    // below) for a product that's about to be rejected anyway. Not
+    // the real gate: the enforce_product_limit trigger is (see the
+    // catch block further down), since this check can be stale if the
+    // plan changed on another device or hasn't loaded this session.
+    if (isAtProductLimit) {
+      throw ProductLimitExceededException(
+        'Product limit reached for your plan ($productLimit max). '
+        'Upgrade to add more products.',
+      );
+    }
+
     if (!_categoryNames.contains(category)) {
       await addCategory(category);
     }
@@ -276,6 +356,13 @@ class ProductProvider extends ChangeNotifier {
       ));
       notifyListeners();
     } catch (e) {
+      // The real gate: enforce_product_limit trigger rejects the
+      // insert server-side (errcode P0001) if the local pre-check
+      // above was stale — e.g. another device added the last slot in
+      // the gap between the check and this request landing.
+      if (e is PostgrestException && e.code == 'P0001') {
+        throw ProductLimitExceededException(e.message);
+      }
       rethrow;
     }
   }

@@ -93,16 +93,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
       builder: (_) => AddProductDialog(
         existingCategories: existing,
         initialCategory: _selectedCategory,
+        productLimit: catalog.productLimit,
+        currentProductCount: catalog.productCount,
+        // onUpgradeTap: left unwired until an upgrade screen/flow exists
+        // (per the subscription plan doc's build order) — Cancel-only
+        // for now on the limit-reached view.
         onSubmit: ({required name, required price, required category, emoji, imageBytes}) {
           catalog
               .addProduct(name: name, price: price, category: category, emoji: emoji, imageBytes: imageBytes)
               .catchError((e) {
             if (!context.mounted) return;
+            // Rare path — the dialog's own limit check should catch
+            // this before submit in almost every case; this only fires
+            // if the plan/count went stale mid-dialog (e.g. another
+            // device added the last slot) and the server trigger
+            // rejected the insert.
+            final message = e is ProductLimitExceededException
+                ? e.message
+                : 'Couldn\'t add product — try again';
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 backgroundColor: AppColors.slate,
                 content: Text(
-                  'Couldn\'t add product — try again',
+                  message,
                   style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
                 ),
               ),
