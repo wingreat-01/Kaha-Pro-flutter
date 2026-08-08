@@ -190,6 +190,26 @@ longer blocks checkout or gets lost.
 - Not yet tested against a real device with real airplane-mode /
   flaky-wifi conditions — only reasoned through, not run.
 
+#### Phase F bug fix this round — transaction timestamps displayed in UTC, not local time
+Supabase's `created_at` is stored and returned in UTC, but every read
+path in `transaction_provider.dart` was parsing it with
+`DateTime.parse(...)` and using it as-is — so `transactions_panel.dart`
+and `transaction_detail_modal.dart` were displaying raw UTC clock time
+against a Philippine (UTC+8) device, and `dailySummaries`' "Today" /
+"Yesterday" day-bucketing was grouping sales by the wrong calendar day
+near midnight.
+- [x] `record()` — `.toLocal()` added after parsing the RPC's
+      `created_at`
+- [x] `syncPending()` — same, for a queued sale's timestamp once it
+      syncs
+- [x] `_fromRow()` — same, for every historical transaction loaded on
+      login
+No changes needed in `transactions_panel.dart` or
+`transaction_detail_modal.dart` — they just read `.hour`/`.minute`/
+`.day` off whatever `DateTime` they're given, so converting at the one
+entry point (`transaction_provider.dart`) fixes display and day-
+grouping everywhere downstream.
+
 
 - [x] First-run owner setup: `StoreSetupScreen` (create store via
       `signUp()` + `store_name` metadata → `handle_new_user` trigger
@@ -213,7 +233,56 @@ longer blocks checkout or gets lost.
       (`is_active = false`), matching what `verify_staff_login()`
       already checks — not a hard `DELETE`
 
-### Phase H — Storage — NOT STARTED
+### Phase H — Storage — IN PROGRESS
+
+- [x] Bucket `product-images` created (public read)
+- [x] Storage RLS policies added: writes scoped to the caller's own
+      `auth.uid()` folder (`storage.foldername(name)[1] =
+      auth.uid()::text`); reads public
+- [x] `products.image_url` column added (`text`, nullable)
+- [x] `models/product.dart` — `imageBytes: Uint8List?` replaced with
+      `imageUrl: String?` (a persisted Storage URL instead of
+      in-memory bytes that never survived a reload)
+- [x] `product_provider.dart` — new `_uploadProductImage(productId,
+      bytes)` helper uploads to `product-images/{uid}/{productId}.jpg`
+      (`upsert: true`, so replacing a photo overwrites rather than
+      accumulating orphaned files) and returns the public URL
+- [x] `addProduct()` — uploads the photo (if provided) right after
+      insert, using the new row's id; a failed upload/save doesn't
+      fail the whole add — the product is just created without a
+      photo, re-addable via the camera badge afterward
+- [x] `updateProductImage()` — rewritten from a local-only `Uint8List`
+      setter into a real async Storage upload + `products.image_url`
+      persist
+- [x] `widgets/product_card.dart` — `Image.memory(imageBytes)` →
+      `Image.network(imageUrl)`, with a loading spinner and an emoji
+      fallback (`errorBuilder`) if the image fails to load
+- [x] `screens/register_screen.dart` — both image-upload call sites
+      (`onImageSelected` in edit mode, and `AddProductDialog.onSubmit`)
+      now `.catchError(...)` and show a snackbar on failure instead of
+      failing silently
+
+**Bug found this round, fix in progress — uploaded photos not
+surviving a fresh reload:**
+- Symptom: a photo uploaded for an existing product (e.g. "Red Horse")
+  displayed correctly for the rest of that session, but was gone after
+  a hot restart / fresh login.
+- Confirmed via Table Editor: `products.image_url` was `null` for that
+  row — the Storage upload itself succeeded (which is why it displayed
+  in-session, from local provider state), but the follow-up
+  `.update({'image_url': ...})` on `products` never actually
+  persisted.
+- `updateProductImage()` and `addProduct()` now both chain `.select()`
+  after the `image_url` update and throw if zero rows come back —
+  Supabase doesn't raise an exception when RLS silently blocks an
+  `UPDATE`, it just matches 0 rows and returns success, so this makes
+  a blocked write surface as a real, catchable error (→ the
+  register_screen snackbar above) instead of failing invisibly.
+- **Not yet confirmed fixed.** This change makes the failure
+  *visible*, not necessarily *fixed*. Next step: re-test the upload —
+  if the "Photo upload failed" snackbar now appears, pull `products`'
+  actual `UPDATE` RLS policy (`select * from pg_policies where
+  tablename = 'products'`) and correct it there.
 
 ### Phase I — AI admin assistant — NOT STARTED (stretch, optional)
 
@@ -229,15 +298,34 @@ longer blocks checkout or gets lost.
   dependency between two `BEFORE INSERT` triggers that Postgres
   doesn't make obvious unless you know to check alphabetical-by-name
   ordering.
+- (This round) Transaction timestamps displayed in UTC instead of
+  local Philippine time — see Phase F bug fix above.
+- (This round) Uploaded product photos not surviving a reload —
+  `image_url` never actually persisted to `products` despite the
+  Storage upload succeeding, because Supabase doesn't error on an
+  RLS-blocked `UPDATE`, it just silently matches zero rows. Added a
+  `.select()`-and-check after every `image_url` write so this now
+  surfaces as a real error — see Phase H above. Root RLS policy fix
+  itself still pending confirmation.
+- (This round, not Supabase-related) `product_card.dart` threw a
+  `RenderFlex overflowed` error at very small card sizes (many grid
+  columns × a narrow window) — the name/price block used fixed-height
+  `SizedBox`es, which a `Column` always lays out at their exact
+  requested size regardless of how little room is actually available;
+  only the single `Expanded` (the image) was actually flexible. Fixed
+  by wrapping the name/price block in `Flexible` + `FittedBox(fit:
+  BoxFit.scaleDown)` so it shrinks together instead of overflowing.
 
 ## How to resume
 Tell Claude: "continue the Kahapro Supabase integration — start
-[Phase X]." Upload this file and the latest
-`kahapro-Flutter-migration-plan.md` at the start of a fresh
-conversation so context carries over. Worth prioritizing next:
-uploading `screens/login_screen.dart` to wire
-`TransactionProvider.loadFromSupabase()` in next to
-`ProductProvider`'s existing call (closes out Phase F fully), then
-`store_counters` RLS (Phase B), confirming Phase D's actual
-completeness, and settling the Cart persistence / offline decisions
-before Phase E work begins in earnest.
+[Phase X]." Upload this file at the start of a fresh conversation so
+context carries over. Worth prioritizing next: confirm whether the
+Phase H `image_url` RLS fix actually surfaces the write failure on
+re-test — if it does, upload the `products` table's RLS policies (or
+just describe them) so the `UPDATE` policy itself can be fixed;
+`updateProductImage()` and `addProduct()` are ready to persist
+correctly the moment that policy allows the write through. After that:
+`store_counters` RLS (Phase B, believed resolved but from an earlier
+round), confirming Phase D's actual completeness, and settling the
+Cart persistence / offline decisions before Phase E work begins in
+earnest.

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user.dart';
+import '../state/cart_provider.dart';
 import '../state/product_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
@@ -97,10 +98,17 @@ class _LoginScreenState extends State<LoginScreen> {
       // Fetch-once-on-login (Phase D + Phase F) — load this store's
       // catalog and transaction history before HomeShell shows. Run in
       // parallel since neither depends on the other's result.
+      final productProvider = context.read<ProductProvider>();
       await Future.wait([
-        context.read<ProductProvider>().loadFromSupabase(),
+        productProvider.loadFromSupabase(),
         context.read<TransactionProvider>().loadFromSupabase(),
       ]);
+
+      // Phase E — restore any cart left over from a previous session
+      // (app closed/crashed mid-sale) now that the product catalog is
+      // loaded, so it can be matched against current products/prices
+      // rather than blindly trusting whatever was cached.
+      await context.read<CartProvider>().restoreFromDisk(productProvider.products);
 
       // Now that both are loaded, retry anything queued while offline.
       // Wired here (rather than inside TransactionProvider itself) so
@@ -108,7 +116,6 @@ class _LoginScreenState extends State<LoginScreen> {
       // ProductProvider without the two providers needing to reference
       // each other directly. Fire-and-forget — login shouldn't block
       // on however long a queue of offline sales takes to replay.
-      final productProvider = context.read<ProductProvider>();
       unawaited(
         context.read<TransactionProvider>().syncPending(
               deductStock: (items) => productProvider.deductStockForLineItems(items),

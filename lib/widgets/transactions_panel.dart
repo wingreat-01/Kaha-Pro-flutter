@@ -10,6 +10,11 @@ import 'transaction_detail_modal.dart';
 /// checkout is confirmed. Tapping a row opens the full line-item detail.
 /// A calendar button lets the user jump straight to a specific day
 /// instead of scrolling through history.
+///
+/// A PENDING row (an offline-queued sale not yet synced to Supabase)
+/// gets an extra discard action so a permanently-failing entry (e.g.
+/// its product was deleted before it could sync) doesn't have to sit
+/// there retrying forever with no way out.
 class TransactionsPanel extends StatefulWidget {
   const TransactionsPanel({super.key});
 
@@ -56,6 +61,39 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
   }
 
   void _clearFilter() => setState(() => _filterDate = null);
+
+  Future<void> _confirmDiscard(BuildContext context, Transaction txn) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.slate,
+        title: Text(
+          'Discard pending sale?',
+          style: AppTextStyles.body(size: 16, weight: FontWeight.w700, color: AppColors.textPrimary),
+        ),
+        content: Text(
+          'This sale (₱${txn.total.toStringAsFixed(2)}) never synced and will stop retrying. '
+          'This can\'t be undone.',
+          style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Discard', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledgerRed)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && txn.localId != null) {
+      await context.read<TransactionProvider>().discardPending(txn.localId!);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +153,7 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
                                   barrierColor: Colors.black54,
                                   builder: (_) => TransactionDetailModal(transaction: txn),
                                 ),
+                                onDiscard: txn.isPending ? () => _confirmDiscard(context, txn) : null,
                               ),
                             ),
                         ],
@@ -223,8 +262,11 @@ class _DaySummaryHeader extends StatelessWidget {
 class _TransactionRow extends StatelessWidget {
   final Transaction transaction;
   final VoidCallback onTap;
+  /// Non-null only for a PENDING (offline-queued, unsynced) row —
+  /// shows a discard icon in place of the chevron for that row only.
+  final VoidCallback? onDiscard;
 
-  const _TransactionRow({required this.transaction, required this.onTap});
+  const _TransactionRow({required this.transaction, required this.onTap, this.onDiscard});
 
   String _formatTime(DateTime t) {
     final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
@@ -235,6 +277,7 @@ class _TransactionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isPending = transaction.isPending;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -243,7 +286,10 @@ class _TransactionRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.slate,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.slateBorder, width: 1),
+          border: Border.all(
+            color: isPending ? AppColors.ledAmber.withOpacity(0.4) : AppColors.slateBorder,
+            width: 1,
+          ),
         ),
         child: Row(
           children: [
@@ -280,7 +326,17 @@ class _TransactionRow extends StatelessWidget {
               style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary),
             ),
             const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+            if (onDiscard != null)
+              IconButton(
+                onPressed: onDiscard,
+                icon: const Icon(Icons.delete_outline, color: AppColors.ledgerRed, size: 18),
+                tooltip: 'Discard pending sale',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              )
+            else
+              const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
           ],
         ),
       ),

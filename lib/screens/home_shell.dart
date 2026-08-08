@@ -1,10 +1,15 @@
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/user.dart';
 import '../widgets/checkout_warmup.dart';
 import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
 import 'settings_panel.dart';
+import '../state/transaction_provider.dart';
+import '../state/product_provider.dart';
 
 enum _Section { register, transactions, settings }
 
@@ -23,6 +28,16 @@ enum _Section { register, transactions, settings }
 /// Now that login is real (Phase 5), Settings is admin-only — a cashier
 /// account never sees the gear icon at all, rather than seeing it and
 /// being blocked after tapping it.
+///
+/// Also owns the offline-queue "faster than next login" retry: this
+/// widget stays mounted for the whole logged-in session, so it's the
+/// right place for a connectivity listener that needs to outlive any
+/// single screen. login_screen.dart's existing syncPending() call still
+/// covers "was offline the whole time the app was closed" — this adds
+/// the mid-shift case (connectivity returns while the app is open) on
+/// top of that, without changing what counts as a successful sync.
+///
+/// TransactionProvider/ProductProvider live in lib/state/.
 class HomeShell extends StatefulWidget {
   final AppUser user;
   final VoidCallback onLogout;
@@ -35,7 +50,46 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   _Section _section = _Section.register;
 
+  late final StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
+  bool _syncingFromConnectivity = false;
+
   bool get _isAdmin => widget.user.role == UserRole.admin;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectivitySubscription =
+        Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
+
+  /// Fires on any connectivity change (any transport, not specifically
+  /// wifi). If there's now a connection and something is queued,
+  /// retries immediately instead of waiting for the next sign-in.
+  /// syncPending() is a no-op if the queue is empty, and a genuine
+  /// PostgrestException/AuthException-type rejection still leaves an
+  /// entry queued (see transaction_provider.dart) — this listener only
+  /// changes when the retry is attempted, not what counts as success.
+  void _onConnectivityChanged(List<ConnectivityResult> results) {
+    if (!mounted || _syncingFromConnectivity) return;
+
+    final hasConnection = results.any((r) => r != ConnectivityResult.none);
+    if (!hasConnection) return;
+
+    final transactionProvider = context.read<TransactionProvider>();
+    if (transactionProvider.pendingCount == 0) return;
+
+    final productProvider = context.read<ProductProvider>();
+    _syncingFromConnectivity = true;
+    transactionProvider
+        .syncPending(deductStock: productProvider.deductStockForLineItems)
+        .whenComplete(() => _syncingFromConnectivity = false);
+  }
 
   Widget _body() {
     switch (_section) {
@@ -56,16 +110,51 @@ class _HomeShellState extends State<HomeShell> {
     required String tooltip,
     required bool isActive,
     required VoidCallback onTap,
+    int badgeCount = 0,
   }) {
-    return IconButton(
+    final button = IconButton(
       icon: Icon(icon, color: isActive ? AppColors.ledAmber : AppColors.textSecondary),
       tooltip: tooltip,
       onPressed: onTap,
+    );
+    if (badgeCount <= 0) return button;
+
+    // A queued-but-unsynced sale count on the Transactions icon — the
+    // only other sign of a pending sale is its #PENDING row inside the
+    // tab itself, which isn't visible until the cashier is already on
+    // that screen. This surfaces it from anywhere in the app.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        button,
+        Positioned(
+          right: 4,
+          top: 4,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+              decoration: BoxDecoration(
+                color: AppColors.ledgerRed,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.slate, width: 1.5),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                badgeCount > 9 ? '9+' : '$badgeCount',
+                style: AppTextStyles.mono(size: 9, weight: FontWeight.w700, color: Colors.white),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final pendingCount = context.watch<TransactionProvider>().pendingCount;
+
     return Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
@@ -88,9 +177,12 @@ class _HomeShellState extends State<HomeShell> {
           ),
           _headerIcon(
             icon: Icons.receipt_long_outlined,
-            tooltip: 'Transactions',
+            tooltip: pendingCount > 0
+                ? 'Transactions ($pendingCount pending)'
+                : 'Transactions',
             isActive: _section == _Section.transactions,
             onTap: () => setState(() => _section = _Section.transactions),
+            badgeCount: pendingCount,
           ),
           if (_isAdmin)
             _headerIcon(

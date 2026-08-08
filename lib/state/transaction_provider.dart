@@ -271,11 +271,9 @@ class TransactionProvider extends ChangeNotifier {
       } catch (e) {
         // Still unreachable, or a genuine rejection surfacing only
         // now (e.g. a product referenced in the sale was deleted in
-        // the meantime) — leave it queued. There's no automatic
-        // give-up/drop for a permanently-failing entry yet; a queued
-        // sale that can never sync will sit here indefinitely. Worth
-        // addressing later (e.g. surfacing a manual "discard" action
-        // after N failed attempts), not handled in this pass.
+        // the meantime) — leave it queued. Discarding a permanently-
+        // failing entry is now a deliberate, manual action instead
+        // (see discardPending() below) rather than automatic.
         stillPending.add(pending);
       }
     }
@@ -283,6 +281,24 @@ class TransactionProvider extends ChangeNotifier {
     _pendingQueue
       ..clear()
       ..addAll(stillPending);
+    await _savePendingToDisk();
+    notifyListeners();
+  }
+
+  /// Permanently drops a queued sale that will never sync (e.g. its
+  /// product was deleted before it could sync) or that the cashier
+  /// decides to abandon. Unlike syncPending()'s automatic retry, this
+  /// is a deliberate, irreversible action — the sale's PENDING row
+  /// disappears from the Transactions tab and it's no longer retried.
+  /// There's nothing to clean up server-side: a queued sale that never
+  /// synced was never written to Supabase in the first place, so no
+  /// stock was ever deducted for it either.
+  Future<void> discardPending(String localId) async {
+    final stillQueued = _pendingQueue.any((p) => p.localId == localId);
+    if (!stillQueued) return;
+
+    _pendingQueue.removeWhere((p) => p.localId == localId);
+    _transactions.removeWhere((t) => t.localId == localId);
     await _savePendingToDisk();
     notifyListeners();
   }
