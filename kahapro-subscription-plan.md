@@ -332,9 +332,51 @@ purchase server-side and updating `stores.plan` accordingly — is a
 separate, sizeable piece of work not sketched here. Worth its own pass
 once the plan/gating shape above is settled.
 
-## Suggested build order
-1. `stores.plan` column + `current_store_plan()` helper (small, no
-   app-facing change yet — everyone defaults to `free`).
+## Build progress
+
+**Decision still in effect:** launching free-only — Free/Basic/Pro
+billing itself is not live, all stores currently behave as Free. But
+two pieces of enforcement infrastructure are being built ahead of
+billing so nothing needs a redesign later — the product cap is fully
+live already (it's a business rule, not billing-dependent), and the
+AI credit schema is in place waiting on the Edge Function that will
+actually spend against it.
+
+**✅ Done — product limit (fully live now, independent of billing):**
+- `stores.plan` column + `current_store_plan()` helper —
+  `001_add_stores_plan.sql`
+- `product_limit()` + `enforce_product_limit()` trigger (Free=5,
+  Basic=30, Pro=unlimited) — `002_add_product_limit.sql`
+- Flutter UI: `ProductProvider` (plan fetch, `productLimit` /
+  `productCount` / `isAtProductLimit` getters, local pre-check +
+  `ProductLimitExceededException`), `AddProductDialog` (counter +
+  locked/upgrade view), `RegisterScreen` (wired through, distinct
+  error message on the rare server-side race)
+
+**✅ Done — AI credit schema (built, not yet wired to anything live):**
+- `ai_credits_remaining` / `ai_credits_reset_at` columns,
+  `ai_credit_allotment()`, `consume_ai_credit()` RPC —
+  `003_add_ai_credits.sql`
+- Behaviorally inert until the Edge Function below calls it — Free's
+  allotment is 0 either way, so this doesn't change anything yet on
+  its own
+
+**⬜ Not started — AI assistant (Phase I), remaining 3 of 4 pieces:**
+1. Edge Function skeleton — auth passthrough + `consume_ai_credit()`
+   gate, structured error responses, no real AI calls yet
+2. Provider fallback logic — real Gemini → Groq → Mistral calls with
+   failover on 429/errors
+3. Flutter-side chat UI — assistant screen, credit display, 403
+   handling, wiring to the Edge Function
+
+**⬜ Not started — billing:**
+- Google Play Billing integration + manual plan-flip path for
+  support/testing (the manual `update stores set plan = ...` path
+  already works today via the SQL editor, ahead of any real UI for it)
+
+## Suggested build order (superseded by progress above — kept for the
+## original reasoning on sequencing)
+1. ~~`stores.plan` column + `current_store_plan()` helper~~ — done.
 2. Build Phase I (the AI assistant Edge Function) **with the plan check
    built in from the start**, not bolted on after — per the earlier
    discussion, this is a pre-Phase-I decision precisely because it
@@ -343,17 +385,6 @@ once the plan/gating shape above is settled.
 4. Google Play Billing integration + a way to manually flip a store's
    plan in Supabase (for testing, and for handling support requests
    before billing is fully automated).
-
-## Status: paid tier on hold — launching free-only
-Decision (see conversation): for initial launch, skip the paid
-subscription entirely — Free/Basic/Pro stays a **future option**, not
-built now. All stores run on the Free tier as sketched above, with the
-AI assistant using the Gemini → Groq → Mistral fallback chain, no
-credit gating, no `stores.plan` enforcement live yet. The schema,
-Edge Function, and RPC sketches above are kept as-is so this can be
-switched on later without a redesign — just flip the plan default,
-wire up the `consume_ai_credit()` check in the Edge Function, and ship
-the Flutter-side lock/upgrade UI already sketched.
 
 ## Scaling considerations (free-only launch, 50-100 clients)
 
