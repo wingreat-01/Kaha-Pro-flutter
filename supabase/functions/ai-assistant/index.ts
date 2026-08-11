@@ -1,14 +1,17 @@
 // supabase/functions/ai-assistant/index.ts
 //
-// Piece 2 of 4 (see kahapro-subscription-plan.md "Build progress").
-// This piece is deliberately incomplete: the auth + credit-gating
-// path is real and testable end-to-end, but callWithFallback() below
-// is a stub that returns a placeholder instead of spending a real
-// Gemini/Groq/Mistral call. That's piece 3 — kept separate so the
-// security boundary (the credit gate) can be built and tested without
-// any AI provider cost while it's being wired up.
+// Piece 3 of 4 (see kahapro-subscription-plan.md "Build progress").
+// Credit gating is now split into two steps instead of one:
+// has_ai_credit() is a pure check (no row lock, no update) called
+// BEFORE attempting any provider, and consume_ai_credit() is called
+// AFTER a provider actually succeeds. This means a request that
+// fails across all 6 providers costs the store nothing — see
+// kahapro-ai-fallback-and-billing-plan.md Part 1 for the full
+// rationale and the known race-window tradeoff of splitting the
+// check and the deduct into two calls.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { callWithFallback } from './fallback.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,13 +24,6 @@ function jsonResponse(body: unknown, status: number): Response {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
-}
-
-// Placeholder for piece 3. Signature is final — prompt in, string
-// response out — so swapping this for the real Gemini → Groq →
-// Mistral fallback chain later doesn't touch anything below.
-async function callWithFallback(prompt: string): Promise<string> {
-  return `[stub response — AI provider not wired up yet] You said: ${prompt}`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -69,45 +65,57 @@ Deno.serve(async (req: Request) => {
   }
   if (prompt.length > 4000) {
     // Arbitrary generous cap — real limit tuning happens once actual
-    // token costs are visible in piece 3.
+    // token costs are visible across the 6-provider chain.
     return jsonResponse({ error: 'prompt is too long.' }, 400);
   }
 
-  // 1. Try to consume one credit under the caller's own RLS-scoped
-  //    session. This single RPC call handles the free-tier check (0
-  //    credits, always false), the monthly reset, and the decrement,
-  //    all in one row-locked transaction — see consume_ai_credit() in
-  //    003_add_ai_credits.sql.
-  const { data: creditGranted, error: creditError } = await supabase.rpc('consume_ai_credit');
+  // 1. Pure check — no row lock, no update. Confirms the store has
+  //    credit available this cycle without spending anything yet.
+  //    Free/trial-lapsed stores always resolve to 0 via
+  //    ai_credit_allotment(), so this single check covers both
+  //    "wrong tier" and "used up this month's credits."
+  const { data: hasCredit, error: creditCheckError } = await supabase.rpc('has_ai_credit');
 
-  if (creditError) {
-    console.error('consume_ai_credit RPC failed:', creditError);
+  if (creditCheckError) {
+    console.error('has_ai_credit RPC failed:', creditCheckError);
     return jsonResponse({ error: 'Could not verify AI access.' }, 500);
   }
 
-  // 2. Gate BEFORE calling any AI provider — this is the actual
-  //    security boundary, not the Flutter UI. A Free-tier store
-  //    always has 0 credits (ai_credit_allotment('free') = 0), so
-  //    this single check covers both "wrong tier" and "used up this
-  //    month's credits" without a separate plan lookup.
-  if (!creditGranted) {
+  if (!hasCredit) {
     return jsonResponse(
       { error: 'No AI credits remaining this month. Upgrade or wait for next cycle.' },
       403,
     );
   }
 
-  // 3. Only now, spend a real API call (stubbed until piece 3).
+  // 2. Attempt the real 6-provider fallback chain. Nothing is spent
+  //    yet — this is intentional (see file header comment).
+  let aiResponse: string;
+  let providerUsed: string;
   try {
-    const aiResponse = await callWithFallback(prompt);
-    return jsonResponse({ response: aiResponse }, 200);
+    const result = await callWithFallback(prompt);
+    aiResponse = result.text;
+    providerUsed = result.provider;
   } catch (err) {
-    // Credit is already spent at this point — see the "Open decisions"
-    // note added below about whether a provider-side failure here
-    // should refund the credit.
-    console.error('callWithFallback failed:', err);
+    console.error('callWithFallback failed, no credit deducted:', err);
     return jsonResponse({ error: 'AI assistant is temporarily unavailable.' }, 502);
   }
+
+  // 3. Only now, having actually gotten a usable response, spend the
+  //    credit. This RPC still does the monthly-reset + decrement in
+  //    one row-locked transaction — see consume_ai_credit() in
+  //    003_add_ai_credits.sql. It's unchanged from piece 2; only the
+  //    point in the flow where it's called has moved.
+  const { error: consumeError } = await supabase.rpc('consume_ai_credit');
+  if (consumeError) {
+    // The AI call already succeeded and the user already has their
+    // answer — log this loudly but still return the response rather
+    // than making the user eat the failure of an accounting step
+    // that isn't their fault.
+    console.error('consume_ai_credit RPC failed after successful AI response:', consumeError);
+  }
+
+  return jsonResponse({ response: aiResponse, provider: providerUsed }, 200);
 });
 
 // --- Manual testing (once deployed) ---
@@ -117,7 +125,7 @@ Deno.serve(async (req: Request) => {
 //   -H "Content-Type: application/json" \
 //   -d '{"prompt": "hello"}'
 //
-// Expected on a Free-tier test store: 403, "No AI credits remaining...".
-// Flip the store to basic/pro first (see 001_add_stores_plan.sql's
-// manual override) to get a 200 with the stub response instead, and
-// confirm stores.ai_credits_remaining actually decremented.
+// Expected on a read-only/expired-credit test store: 403.
+// Expected on a store with credit: 200, real AI response +
+// "provider" field showing which of the 6 actually served it, and
+// stores.ai_credits_remaining decremented by exactly 1.
