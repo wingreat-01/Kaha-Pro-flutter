@@ -6,8 +6,11 @@ export async function callGemini(prompt: string): Promise<string> {
   const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
+    // Using the rolling "-latest" alias rather than a pinned version
+    // (e.g. gemini-2.5-flash) so this doesn't go stale again when Google
+    // deprecates a specific dated model for new API keys/projects.
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

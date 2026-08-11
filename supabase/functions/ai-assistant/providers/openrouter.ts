@@ -11,13 +11,11 @@ export async function callOpenRouter(prompt: string): Promise<string> {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        // OpenRouter requests these for free-tier usage attribution —
-        // not strictly required but recommended by their docs.
         'HTTP-Referer': 'https://kahapro.app',
         'X-Title': 'KahaPro',
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
+        model: 'openrouter/free', // random router across all free-variant models — no catalog-drift risk
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 800,
       }),
