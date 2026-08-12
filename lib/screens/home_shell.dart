@@ -7,11 +7,12 @@ import '../models/user.dart';
 import '../widgets/checkout_warmup.dart';
 import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
+import 'reports_screen.dart';
 import 'settings_panel.dart';
 import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
 
-enum _Section { register, transactions, settings }
+enum _Section { register, transactions, reports, settings }
 
 /// App shell — owns top-level navigation between the Register (product
 /// grid + cart), Transactions history, and Settings (Users, Categories,
@@ -97,6 +98,16 @@ class _HomeShellState extends State<HomeShell> {
         return RegisterScreen(cashierName: widget.user.name);
       case _Section.transactions:
         return const TransactionsPanel();
+      case _Section.reports:
+        // Defensive fallback — same reasoning as settings below: the
+        // header icon that sets this is hidden entirely for
+        // non-admins, so this only matters if _section somehow ends
+        // up here some other way.
+        return _isAdmin
+            ? ReportsScreen(
+                reportBuilder: (range) => context.read<TransactionProvider>().reportFor(range),
+              )
+            : RegisterScreen(cashierName: widget.user.name);
       case _Section.settings:
         // Defensive fallback — the gear icon that sets this is hidden
         // entirely for non-admins, so this only matters if _section
@@ -184,6 +195,13 @@ class _HomeShellState extends State<HomeShell> {
             onTap: () => setState(() => _section = _Section.transactions),
             badgeCount: pendingCount,
           ),
+          if (_isAdmin)
+            _headerIcon(
+              icon: Icons.bar_chart_outlined,
+              tooltip: 'Reports',
+              isActive: _section == _Section.reports,
+              onTap: () => setState(() => _section = _Section.reports),
+            ),
           if (_isAdmin)
             _headerIcon(
               icon: Icons.settings_outlined,

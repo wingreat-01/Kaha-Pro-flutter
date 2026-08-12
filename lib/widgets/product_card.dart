@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -34,6 +35,21 @@ class ProductCard extends StatefulWidget {
 class _ProductCardState extends State<ProductCard> {
   bool _pressed = false;
   bool _picking = false;
+
+  // The flat product.price becomes stale the moment a size is added
+  // (it's whatever it happened to be before sizes existed, and never
+  // gets updated after) — so once a product has variants, the card
+  // shows "From ₱<cheapest>" instead, matching what the size picker
+  // sheet actually offers. A single variant still shows "From" rather
+  // than that one price outright, since more sizes could be added
+  // later and the label shouldn't need to flip format at that point.
+  String _priceLabel(Product product) {
+    if (product.variants.isEmpty) {
+      return '₱${product.price.toStringAsFixed(2)}';
+    }
+    final cheapest = product.variants.map((v) => v.price).reduce(min);
+    return 'From ₱${cheapest.toStringAsFixed(2)}';
+  }
 
   Future<void> _pickImage() async {
     if (_picking) return;
@@ -154,7 +170,7 @@ class _ProductCardState extends State<ProductCard> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '₱${product.price.toStringAsFixed(2)}',
+                    _priceLabel(product),
                     style: AppTextStyles.mono(
                       size: 14,
                       weight: FontWeight.w700,

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show DateTimeRange;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cart_item.dart';
 import '../models/pending_sale.dart';
+import '../models/sales_report.dart';
 import '../models/transaction.dart';
 
 /// Transaction log for the Register screen. Backed by Supabase
@@ -45,6 +47,90 @@ class TransactionProvider extends ChangeNotifier {
       grouped.putIfAbsent(day, () => []).add(txn);
     }
     return grouped.entries.map((e) => DaySummary(day: e.key, transactions: e.value)).toList();
+  }
+
+  /// Builds a SalesReport for the given date range — the real data
+  /// source behind ReportsScreen's reportBuilder callback, replacing
+  /// its built-in mock generator. Everything's computed from the
+  /// already-in-memory _transactions list (same source dailySummaries
+  /// uses above), so this is just aggregation, no extra Supabase
+  /// round-trip. Includes still-pending (unsynced) sales — a queued
+  /// sale is a real completed cash sale as far as the owner's numbers
+  /// are concerned, it just hasn't reached Supabase yet.
+  ///
+  /// [range] is treated as inclusive on both ends — pass
+  /// DateTimeRange(start: <day 00:00:00>, end: <day 23:59:59>) for a
+  /// single-day report, which is what ReportsScreen's presets already
+  /// build.
+  SalesReport reportFor(DateTimeRange range) {
+    final inRange = _transactions
+        .where((t) => !t.timestamp.isBefore(range.start) && !t.timestamp.isAfter(range.end))
+        .toList();
+
+    double totalRevenue = 0;
+    int itemsSold = 0;
+    final productTotals = <String, _ProductAgg>{};
+    final cashierTotals = <String, _CashierAgg>{};
+
+    for (final txn in inRange) {
+      totalRevenue += txn.total;
+
+      // cashierName is null on older rows recorded before it was
+      // captured — group those under a visible "Unknown" bucket
+      // rather than silently dropping them from the breakdown.
+      final cashierKey = txn.cashierName ?? 'Unknown';
+      final cashierAgg = cashierTotals.putIfAbsent(cashierKey, () => _CashierAgg());
+      cashierAgg.transactionCount += 1;
+      cashierAgg.revenue += txn.total;
+
+      for (final item in txn.items) {
+        itemsSold += item.quantity;
+        // Keyed on (productId, variantId) so "Coffee (Large)" and
+        // "Coffee (Medium)" tally separately, matching how the cart
+        // itself keys lines — same reasoning as CartProvider.
+        final key = '${item.productId}::${item.variantId ?? ''}';
+        final productAgg = productTotals.putIfAbsent(
+          key,
+          () => _ProductAgg(productId: item.productId, variantId: item.variantId, displayName: item.name),
+        );
+        productAgg.quantitySold += item.quantity;
+        productAgg.revenue += item.lineTotal;
+      }
+    }
+
+    final productBreakdown = productTotals.values
+        .map((a) => ProductSalesLine(
+              productId: a.productId,
+              variantId: a.variantId,
+              displayName: a.displayName,
+              quantitySold: a.quantitySold,
+              revenue: a.revenue,
+            ))
+        .toList();
+
+    final cashierBreakdown = cashierTotals.entries
+        .map((e) => CashierSalesLine(
+              cashierName: e.key,
+              transactionCount: e.value.transactionCount,
+              revenue: e.value.revenue,
+            ))
+        .toList()
+      ..sort((a, b) => b.revenue.compareTo(a.revenue));
+
+    return SalesReport(
+      rangeStart: range.start,
+      rangeEnd: range.end,
+      // All sales here are cash, so cash actually taken in equals
+      // revenue — kept as a separate field on SalesReport (rather than
+      // just reusing totalRevenue in the UI) so a future non-cash
+      // tender type only needs a change here, not in ReportsScreen.
+      totalRevenue: totalRevenue,
+      cashIn: totalRevenue,
+      transactionCount: inRange.length,
+      itemsSold: itemsSold,
+      productBreakdown: productBreakdown,
+      cashierBreakdown: cashierBreakdown,
+    );
   }
 
   Future<void> _loadPendingFromDisk() async {
@@ -331,4 +417,23 @@ class TransactionProvider extends ChangeNotifier {
       change: (row['change_amount'] as num).toDouble(),
     );
   }
+}
+
+/// Mutable running totals used only inside reportFor() while grouping
+/// — converted to the immutable ProductSalesLine/CashierSalesLine
+/// models before being returned, so nothing mutable ever leaves this
+/// file.
+class _ProductAgg {
+  final String productId;
+  final String? variantId;
+  final String displayName;
+  int quantitySold = 0;
+  double revenue = 0;
+
+  _ProductAgg({required this.productId, required this.variantId, required this.displayName});
+}
+
+class _CashierAgg {
+  int transactionCount = 0;
+  double revenue = 0;
 }
