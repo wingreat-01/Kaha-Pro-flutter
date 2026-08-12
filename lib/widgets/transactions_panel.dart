@@ -102,67 +102,77 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
     final summaries =
         filterDate == null ? allSummaries : allSummaries.where((s) => s.day == filterDate).toList();
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
-            children: [
-              if (filterDate != null)
-                Expanded(
-                  child: _DateFilterChip(date: filterDate, onClear: _clearFilter),
-                )
-              else
-                const Spacer(),
-              IconButton(
-                onPressed: () => _pickDate(allSummaries),
-                icon: const Icon(Icons.calendar_today_outlined, color: AppColors.textSecondary, size: 18),
-                tooltip: 'Jump to date',
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: summaries.isEmpty
-              ? Center(
-                  child: Text(
-                    filterDate == null ? 'No transactions yet' : 'No transactions on this date',
-                    style: AppTextStyles.body(size: 13, color: AppColors.textMuted),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: summaries.length,
-                  itemBuilder: (context, index) {
-                    final day = summaries[index];
-                    final isLast = index == summaries.length - 1;
-                    return Padding(
-                      padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _DaySummaryHeader(summary: day),
-                          const SizedBox(height: 10),
-                          for (final txn in day.transactions)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _TransactionRow(
-                                transaction: txn,
-                                onTap: () => showDialog(
-                                  context: context,
-                                  barrierColor: Colors.black54,
-                                  builder: (_) => TransactionDetailModal(transaction: txn),
-                                ),
-                                onDiscard: txn.isPending ? () => _confirmDiscard(context, txn) : null,
-                              ),
-                            ),
-                        ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 700;
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: isWide ? 900 : double.infinity),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Row(
+                    children: [
+                      if (filterDate != null)
+                        Expanded(
+                          child: _DateFilterChip(date: filterDate, onClear: _clearFilter),
+                        )
+                      else
+                        const Spacer(),
+                      IconButton(
+                        onPressed: () => _pickDate(allSummaries),
+                        icon: const Icon(Icons.calendar_today_outlined, color: AppColors.textSecondary, size: 18),
+                        tooltip: 'Jump to date',
                       ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
-        ),
-      ],
+                Expanded(
+                  child: summaries.isEmpty
+                      ? Center(
+                          child: Text(
+                            filterDate == null ? 'No transactions yet' : 'No transactions on this date',
+                            style: AppTextStyles.body(size: 13, color: AppColors.textMuted),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: summaries.length,
+                          itemBuilder: (context, index) {
+                            final day = summaries[index];
+                            final isLast = index == summaries.length - 1;
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _DaySummaryHeader(summary: day),
+                                  const SizedBox(height: 10),
+                                  for (final txn in day.transactions)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 10),
+                                      child: _TransactionRow(
+                                        transaction: txn,
+                                        onTap: () => showDialog(
+                                          context: context,
+                                          barrierColor: Colors.black54,
+                                          builder: (_) => TransactionDetailModal(transaction: txn),
+                                        ),
+                                        onDiscard: txn.isPending ? () => _confirmDiscard(context, txn) : null,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
