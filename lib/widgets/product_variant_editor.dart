@@ -2,41 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product_variant.dart';
 import '../state/product_provider.dart';
-
-/// Design tokens — mirrors KahaPro's existing theme constants.
-/// If the app already has a central AppColors/AppTheme file, swap
-/// these out for that instead of duplicating hex values here.
-class _VariantEditorColors {
-  static const charcoal = Color(0xFF1E2126);
-  static const slate = Color(0xFF2A2E35);
-  static const ledAmber = Color(0xFFFFB020);
-  static const tillGreen = Color(0xFF3FA796);
-  static const ledgerRed = Color(0xFFE4572E);
-  static const paperCream = Color(0xFFF6F1E4);
-}
+import '../theme/app_theme.dart';
 
 /// Drop-in "This product has sizes" section for the add/edit product
-/// form. Embed it wherever the form already has fields like stock
-/// qty / low-stock threshold / track-stock toggle.
+/// form (embedded directly in AddProductDialog).
 ///
 /// - For a NEW product (not yet saved), pass [productId] as null —
-///   the toggle still works but rows are staged locally in
-///   [onDraftVariantsChanged] and only actually written to Supabase
-///   once the parent form calls addVariant() per row after the
-///   product itself is created (see usage note below).
-/// - For an EXISTING product being edited, pass its real
-///   [productId] and [initialVariants] — every add/rename/reprice/
-///   delete here writes straight through ProductProvider immediately,
-///   same as the rest of the admin UI (no separate "Save" step needed
-///   for sizes specifically).
+///   rows are staged locally and reported via [onDraftVariantsChanged];
+///   AddProductDialog forwards the staged list through its onSubmit,
+///   and RegisterScreen attaches them via ProductProvider.addVariant
+///   once the new product actually has an id.
+/// - For an EXISTING product being edited, pass its real [productId]
+///   and [initialVariants] — every add/rename/reprice/delete writes
+///   straight through ProductProvider immediately, same as the rest
+///   of the admin UI (no separate "Save" step for sizes).
 class ProductVariantEditor extends StatefulWidget {
   final String? productId;
   final List<ProductVariant> initialVariants;
-
-  /// Only used in the "new product, no id yet" case — lets the parent
-  /// form grab the staged (name, price) pairs at submit time and call
-  /// ProductProvider.addVariant() for each once the product row
-  /// exists. Ignored once [productId] is non-null.
   final ValueChanged<List<({String name, double price})>>? onDraftVariantsChanged;
 
   const ProductVariantEditor({
@@ -54,6 +36,8 @@ class _DraftRow {
   final ProductVariant? existing; // null = not yet saved to Supabase
   final TextEditingController nameCtrl;
   final TextEditingController priceCtrl;
+  final FocusNode nameFocus = FocusNode();
+  final FocusNode priceFocus = FocusNode();
 
   _DraftRow({this.existing, required String name, required String price})
       : nameCtrl = TextEditingController(text: name),
@@ -62,6 +46,8 @@ class _DraftRow {
   void dispose() {
     nameCtrl.dispose();
     priceCtrl.dispose();
+    nameFocus.dispose();
+    priceFocus.dispose();
   }
 }
 
@@ -74,11 +60,7 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
     super.initState();
     _hasSizes = widget.initialVariants.isNotEmpty;
     for (final v in widget.initialVariants) {
-      _rows.add(_DraftRow(
-        existing: v,
-        name: v.name,
-        price: v.price.toStringAsFixed(2),
-      ));
+      _rows.add(_newRow(existing: v, name: v.name, price: v.price.toStringAsFixed(2)));
     }
   }
 
@@ -91,40 +73,64 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
   }
 
   void _notifyDraftChange() {
-    if (widget.productId != null) return; // existing product: no draft mode
+    if (widget.productId != null) return; // existing product: writes go straight to Supabase
     widget.onDraftVariantsChanged?.call(_rows
         .map((r) => (
               name: r.nameCtrl.text.trim(),
               price: double.tryParse(r.priceCtrl.text.trim()) ?? 0,
             ))
-        .where((r) => r.name.isNotEmpty)
+        .where((r) => r.name.isNotEmpty && r.price > 0)
         .toList());
   }
 
-  Future<void> _addRow() async {
-    setState(() {
-      _rows.add(_DraftRow(name: '', price: ''));
-    });
+  /// True blur handling: onSubmitted/onEditingComplete only fire on a
+  /// keyboard "Done"/"Next" action, not on tapping away to another
+  /// widget (e.g. straight to the dialog's own Save button) — which
+  /// was the actual bug (toggle appeared to reset because nothing
+  /// had actually been committed yet). This listens for real focus
+  /// loss on either field and commits then, in addition to the
+  /// existing submit/editingComplete handlers.
+  void _wireRow(_DraftRow row) {
+    void maybeCommit(FocusNode node) {
+      if (node.hasFocus) return; // only act when focus is LEAVING
+      if (!mounted) return; // widget (dialog) already gone
+      final index = _rows.indexOf(row);
+      if (index == -1) return; // row was removed/disposed
+      _commitRow(index);
+    }
+
+    row.nameFocus.addListener(() => maybeCommit(row.nameFocus));
+    row.priceFocus.addListener(() => maybeCommit(row.priceFocus));
+  }
+
+  _DraftRow _newRow({ProductVariant? existing, required String name, required String price}) {
+    final row = _DraftRow(existing: existing, name: name, price: price);
+    _wireRow(row);
+    return row;
+  }
+
+  void _addRow() {
+    setState(() => _rows.add(_newRow(name: '', price: '')));
   }
 
   Future<void> _removeRow(int index) async {
     final row = _rows[index];
     if (widget.productId != null && row.existing != null) {
-      // Existing, saved size — delete it server-side. Optimistic
-      // removal from the visible list; ProductProvider handles its
-      // own rollback if the delete fails, we just surface the error.
       setState(() => _rows.removeAt(index));
       try {
         await context.read<ProductProvider>().deleteVariant(row.existing!.id);
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not delete size: $e')),
+            SnackBar(
+              backgroundColor: AppColors.slate,
+              content: Text('Could not delete size — try again',
+                  style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed)),
+            ),
           );
         }
       }
     } else {
-      // Draft row, never saved — just drop it locally.
       setState(() => _rows.removeAt(index));
       _notifyDraftChange();
     }
@@ -135,7 +141,7 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
     final row = _rows[index];
     final name = row.nameCtrl.text.trim();
     final price = double.tryParse(row.priceCtrl.text.trim());
-    if (name.isEmpty || price == null) return;
+    if (name.isEmpty || price == null || price <= 0) return;
 
     if (widget.productId == null) {
       _notifyDraftChange();
@@ -146,17 +152,14 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
     try {
       if (row.existing == null) {
         await provider.addVariant(widget.productId!, name: name, price: price);
-        // Pick up the real id/sortOrder that came back so future
-        // edits to this row target the right row.
-        final saved = provider.products
+        final matches = provider.products
             .firstWhere((p) => p.id == widget.productId)
             .variants
-            .where((v) => v.name == name && v.price == price)
-            .toList();
-        if (saved.isNotEmpty && mounted) {
+            .where((v) => v.name == name && v.price == price);
+        if (matches.isNotEmpty && mounted) {
           setState(() {
-            _rows[index] = _DraftRow(
-              existing: saved.last,
+            _rows[index] = _newRow(
+              existing: matches.last,
               name: name,
               price: price.toStringAsFixed(2),
             );
@@ -168,7 +171,11 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save size: $e')),
+          SnackBar(
+            backgroundColor: AppColors.slate,
+            content: Text('Could not save size — try again',
+                style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed)),
+          ),
         );
       }
     }
@@ -179,30 +186,54 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          activeColor: _VariantEditorColors.ledAmber,
-          title: const Text(
-            'This product has sizes',
-            style: TextStyle(color: _VariantEditorColors.paperCream, fontWeight: FontWeight.w600),
-          ),
-          subtitle: const Text(
-            'e.g. Medium, Large, Grande — each with its own price',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-          value: _hasSizes,
-          onChanged: (v) {
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            final next = !_hasSizes;
             setState(() {
-              _hasSizes = v;
-              if (v && _rows.isEmpty) {
-                _rows.add(_DraftRow(name: '', price: ''));
+              _hasSizes = next;
+              if (next && _rows.isEmpty) {
+                _rows.add(_newRow(name: '', price: ''));
               }
             });
             _notifyDraftChange();
           },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('This product has sizes', style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'e.g. Medium, Large, Grande — each with its own price',
+                        style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _hasSizes,
+                  activeColor: AppColors.tillGreen,
+                  onChanged: (v) {
+                    setState(() {
+                      _hasSizes = v;
+                      if (v && _rows.isEmpty) {
+                        _rows.add(_newRow(name: '', price: ''));
+                      }
+                    });
+                    _notifyDraftChange();
+                  },
+                ),
+              ],
+            ),
+          ),
         ),
         if (_hasSizes) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           ..._rows.asMap().entries.map((entry) {
             final index = entry.key;
             final row = entry.value;
@@ -214,19 +245,9 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
                     flex: 3,
                     child: TextField(
                       controller: row.nameCtrl,
-                      style: const TextStyle(color: _VariantEditorColors.paperCream),
-                      decoration: InputDecoration(
-                        hintText: 'Size name (e.g. Large)',
-                        hintStyle: const TextStyle(color: Colors.white38),
-                        filled: true,
-                        fillColor: _VariantEditorColors.slate,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
+                      focusNode: row.nameFocus,
+                      style: AppTextStyles.body(size: 14),
+                      decoration: const InputDecoration(hintText: 'Size name (e.g. Large)'),
                       onSubmitted: (_) => _commitRow(index),
                       onEditingComplete: () => _commitRow(index),
                     ),
@@ -236,32 +257,16 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
                     flex: 2,
                     child: TextField(
                       controller: row.priceCtrl,
+                      focusNode: row.priceFocus,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: const TextStyle(
-                        color: _VariantEditorColors.ledAmber,
-                        fontFamily: 'IBMPlexMono',
-                        fontWeight: FontWeight.w600,
-                      ),
-                      decoration: InputDecoration(
-                        prefixText: '₱',
-                        prefixStyle: const TextStyle(color: _VariantEditorColors.ledAmber),
-                        hintText: '0.00',
-                        hintStyle: const TextStyle(color: Colors.white38),
-                        filled: true,
-                        fillColor: _VariantEditorColors.slate,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
+                      style: AppTextStyles.mono(size: 14, weight: FontWeight.w600, color: AppColors.ledAmber),
+                      decoration: const InputDecoration(hintText: '0.00', prefixText: '₱'),
                       onSubmitted: (_) => _commitRow(index),
                       onEditingComplete: () => _commitRow(index),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, color: _VariantEditorColors.ledgerRed),
+                    icon: const Icon(Icons.delete_outline, color: AppColors.ledgerRed, size: 20),
                     onPressed: () => _removeRow(index),
                     tooltip: 'Remove size',
                   ),
@@ -271,11 +276,8 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
           }),
           TextButton.icon(
             onPressed: _addRow,
-            icon: const Icon(Icons.add_circle_outline, color: _VariantEditorColors.tillGreen),
-            label: const Text(
-              'Add size',
-              style: TextStyle(color: _VariantEditorColors.tillGreen, fontWeight: FontWeight.w600),
-            ),
+            icon: const Icon(Icons.add_circle_outline, color: AppColors.tillGreen, size: 18),
+            label: Text('Add size', style: AppTextStyles.body(size: 12.5, weight: FontWeight.w600, color: AppColors.tillGreen)),
           ),
         ],
       ],
