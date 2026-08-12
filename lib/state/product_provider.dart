@@ -183,6 +183,7 @@ class ProductProvider extends ChangeNotifier {
       imageUrl: row['image_url'] as String?,
       stockQty: row['stock_qty'] as int,
       lowStockThreshold: row['low_stock_threshold'] as int,
+      trackStock: row['track_stock'] as bool? ?? false,
     );
   }
 
@@ -285,6 +286,7 @@ class ProductProvider extends ChangeNotifier {
     Uint8List? imageBytes,
     int stockQty = 0,
     int lowStockThreshold = 5,
+    bool trackStock = false,
   }) async {
     // Local pre-check — catches the common case instantly, no network
     // round trip, and avoids creating a new category (addCategory
@@ -315,6 +317,7 @@ class ProductProvider extends ChangeNotifier {
             'emoji': (emoji == null || emoji.trim().isEmpty) ? null : emoji.trim(),
             'stock_qty': stockQty,
             'low_stock_threshold': lowStockThreshold,
+            'track_stock': trackStock,
           })
           .select()
           .single();
@@ -353,6 +356,7 @@ class ProductProvider extends ChangeNotifier {
         imageUrl: imageUrl,
         stockQty: stockQty,
         lowStockThreshold: lowStockThreshold,
+        trackStock: trackStock,
       ));
       notifyListeners();
     } catch (e) {
@@ -365,6 +369,83 @@ class ProductProvider extends ChangeNotifier {
       }
       rethrow;
     }
+  }
+
+  /// Full edit — name, price, category, emoji. The general-purpose
+  /// counterpart to [updateProductCategory] (which this now delegates
+  /// to when only the category actually changes, so there's one write
+  /// path instead of two slightly different ones).
+  Future<void> updateProduct(
+    String id, {
+    required String name,
+    required double price,
+    required String category,
+    String? emoji,
+    bool? trackStock,
+  }) async {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index < 0) return;
+    final previous = _products[index];
+
+    if (!_categoryNames.contains(category)) {
+      await addCategory(category);
+    }
+    final categoryId = _categoryIds[category];
+    if (categoryId == null) return;
+
+    final trimmedEmoji = (emoji == null || emoji.trim().isEmpty) ? null : emoji.trim();
+    final resolvedTrackStock = trackStock ?? previous.trackStock;
+
+    _products[index] = Product(
+      id: previous.id,
+      name: name,
+      price: price,
+      category: category,
+      emoji: trimmedEmoji,
+      imageUrl: previous.imageUrl,
+      stockQty: previous.stockQty,
+      lowStockThreshold: previous.lowStockThreshold,
+      trackStock: resolvedTrackStock,
+    );
+    notifyListeners();
+
+    try {
+      await _client.from('products').update({
+        'name': name,
+        'price': price,
+        'category_id': categoryId,
+        'emoji': trimmedEmoji,
+        'track_stock': resolvedTrackStock,
+      }).eq('id', id);
+    } catch (e) {
+      _products[index] = previous;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Reassigns an existing product to a different category — the
+  /// missing piece for getting a product out of Uncategorized (there
+  /// was previously no way to change a product's category after
+  /// creation at all; the only "edit" that existed was
+  /// [updateProductImage]). Creates the target category first if it
+  /// doesn't exist yet, same as [addProduct] does. Delegates to
+  /// [updateProduct] with the product's existing name/price/emoji
+  /// unchanged.
+  Future<void> updateProductCategory(String id, String newCategory) async {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index < 0) return;
+    final previous = _products[index];
+    if (previous.category == newCategory) return;
+
+    await updateProduct(
+      id,
+      name: previous.name,
+      price: previous.price,
+      category: newCategory,
+      emoji: previous.emoji,
+      trackStock: previous.trackStock,
+    );
   }
 
   Future<void> removeProduct(String id) async {
@@ -440,11 +521,15 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  /// Deducts stock for a completed sale. Fires one update per line item —
-  /// fine at today's single-till sale volume; worth batching into a
-  /// single RPC later if that ever becomes a bottleneck.
+  /// Deducts stock for a completed sale. Only for products with
+  /// [Product.trackStock] on (drinks/cups) — food items you count and
+  /// restock by hand are untouched by checkout. Fires one update per
+  /// line item — fine at today's single-till sale volume; worth
+  /// batching into a single RPC later if that ever becomes a
+  /// bottleneck.
   Future<void> deductStockForSale(List<CartItem> soldItems) async {
     for (final item in soldItems) {
+      if (!item.product.trackStock) continue;
       await adjustStock(item.product.id, -item.quantity);
     }
   }
@@ -453,10 +538,13 @@ class ProductProvider extends ChangeNotifier {
   /// TransactionLineItem snapshots instead of live CartItems — used
   /// when a sale that couldn't reach Supabase at checkout time finally
   /// syncs later. By then there's no CartItem/Product object left,
-  /// only the flat sale record TransactionProvider persisted to disk.
+  /// only the flat sale record TransactionProvider persisted to disk,
+  /// so trackStock is looked up from the current catalog by id.
   Future<void> deductStockForLineItems(List<TransactionLineItem> items) async {
     for (final item in items) {
       if (item.productId.isEmpty) continue; // product was deleted before this synced
+      final matches = _products.where((p) => p.id == item.productId);
+      if (matches.isEmpty || !matches.first.trackStock) continue;
       await adjustStock(item.productId, -item.quantity);
     }
   }

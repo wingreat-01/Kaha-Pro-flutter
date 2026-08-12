@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../state/product_provider.dart';
+import '../widgets/reassign_category_dialog.dart';
 
 /// Categories admin panel — reached via Settings → Categories. Categories
 /// are now a real stored list (see ProductProvider), so this can add an
@@ -153,14 +155,105 @@ class _CategoryRow extends StatelessWidget {
   }
 }
 
-/// Read-only product list for a category — currently only reachable from
-/// the protected `Uncategorized` row, since every other category opens
-/// the rename dialog instead. No edit/delete affordances here; if you
-/// need to move a product out, do it from the product's own edit flow
-/// in InventoryPanel.
+/// Product list for a category — reachable from the protected
+/// `Uncategorized` row. Tapping a product opens an action sheet to
+/// move it to a real category or delete it outright — this used to be
+/// read-only with a comment pointing at a nonexistent "product's own
+/// edit flow in InventoryPanel"; that flow didn't actually exist, so
+/// products landing here (e.g. after their category was deleted) had
+/// no way back out. Now wired directly.
 class _CategoryProductsView extends StatelessWidget {
   final String categoryName;
   const _CategoryProductsView({required this.categoryName});
+
+  void _showProductActions(BuildContext context, Product product) {
+    final catalog = context.read<ProductProvider>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.slate,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.slateBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(product.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 4),
+            ListTile(
+              leading: Icon(Icons.drive_file_move_outline, color: AppColors.ledAmber),
+              title: Text('Move to category', style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                ReassignCategoryDialog.show(
+                  context,
+                  product: product,
+                  availableCategories: catalog.categoryNames
+                      .where((c) => c != ProductProvider.uncategorized && c != categoryName)
+                      .toList(),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: AppColors.ledgerRed),
+              title: Text(
+                'Delete product',
+                style: AppTextStyles.body(size: 14, weight: FontWeight.w600, color: AppColors.ledgerRed),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _confirmDeleteProduct(context, catalog, product);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteProduct(BuildContext context, ProductProvider catalog, Product product) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.slate,
+        title: Text('Delete product?', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
+        content: Text(
+          'Remove "${product.name}" from the catalog? This can\'t be undone.',
+          style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text('Cancel', style: AppTextStyles.body(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              catalog.removeProduct(product.id);
+              Navigator.of(dialogContext).pop();
+            },
+            child: Text('Delete', style: AppTextStyles.body(color: AppColors.ledgerRed, weight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -191,35 +284,43 @@ class _CategoryProductsView extends StatelessWidget {
                 final p = products[i];
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     color: AppColors.slate,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppColors.slateBorder, width: 1),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(p.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
-                            const SizedBox(height: 4),
-                            Text(
-                              p.isLowStock ? 'Stock: ${p.stockQty} • LOW' : 'Stock: ${p.stockQty}',
-                              style: AppTextStyles.body(
-                                size: 12,
-                                color: p.isLowStock ? AppColors.ledgerRed : AppColors.textSecondary,
-                              ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => _showProductActions(context, p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(p.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  p.isLowStock ? 'Stock: ${p.stockQty} • LOW' : 'Stock: ${p.stockQty}',
+                                  style: AppTextStyles.body(
+                                    size: 12,
+                                    color: p.isLowStock ? AppColors.ledgerRed : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          Text(
+                            '₱${p.price.toStringAsFixed(2)}',
+                            style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                        ],
                       ),
-                      Text(
-                        '₱${p.price.toStringAsFixed(2)}',
-                        style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
-                      ),
-                    ],
+                    ),
                   ),
                 );
               },

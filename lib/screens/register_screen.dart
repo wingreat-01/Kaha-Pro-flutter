@@ -39,30 +39,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
   static const double _sidebarWidth = 200;
   static const double _cartPanelWidth = 320;
 
-  // Real product-category tabs only. Transactions/Users/Settings used to
-  // live here too, which both overflowed the phone tab bar and mixed nav
-  // concerns with category filtering — they're header icons now.
-  static const List<String> _categoryTabs = [
-    'All',
-    'Main',
-    'Add Ons',
-    'Drinks',
-  ];
-
-  // "All" is the only tab that isn't a real product category.
-  static const Set<String> _nonCategoryTabs = {'All'};
-
-  // The set of "known" category names: tabs we show nav-wise as categories,
-  // whether or not any product currently has that category yet (e.g. a
-  // freshly-added tab like "Add Ons" with zero products still counts).
-  List<String> _knownCategories(ProductProvider catalog) {
-    final fromProducts = catalog.categories.where((c) => c != 'All');
-    final fromTabs = _categoryTabs.where((t) => !_nonCategoryTabs.contains(t));
-    return {...fromProducts, ...fromTabs}.toList()..sort();
-  }
+  // Category tabs now come straight from ProductProvider.categories
+  // (Supabase-backed, includes 'All' + every category row — even ones
+  // with zero products, e.g. a freshly-added "Add Ons"). There used to
+  // be a hardcoded _categoryTabs list here as a second source of
+  // truth; that meant deleting a category in Settings never removed it
+  // from this screen since it wasn't reading from the same data at
+  // all. catalog.categories is reactive via notifyListeners, so
+  // deletes/renames/adds in Settings now show up here immediately —
+  // no hot restart needed.
 
   List<Product> _filtered(ProductProvider catalog) {
-    if (_selectedCategory == 'All') return catalog.products;
+    // "All" excludes Uncategorized products — since there's no tab to
+    // select Uncategorized directly anymore, a product that lands
+    // there (e.g. its category was just deleted) is hidden from the
+    // register grid entirely until someone re-tags it into a real
+    // category in Settings. Prevents an orphaned product from still
+    // being sold under a category that no longer exists.
+    if (_selectedCategory == 'All') {
+      return catalog.products.where((p) => p.category != ProductProvider.uncategorized).toList();
+    }
     return catalog.products.where((p) => p.category == _selectedCategory).toList();
   }
 
@@ -87,20 +83,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _openAddProductDialog(BuildContext context, ProductProvider catalog) {
-    final existing = _knownCategories(catalog);
+    // catalog.categoryNames is already the live, Supabase-backed list
+    // (no 'All' in it), so the dialog's dropdown can use it directly —
+    // no need to reconcile it against a separate hardcoded tab list.
     showDialog(
       context: context,
       builder: (_) => AddProductDialog(
-        existingCategories: existing,
+        existingCategories: catalog.categoryNames,
         initialCategory: _selectedCategory,
         productLimit: catalog.productLimit,
         currentProductCount: catalog.productCount,
         // onUpgradeTap: left unwired until an upgrade screen/flow exists
         // (per the subscription plan doc's build order) — Cancel-only
         // for now on the limit-reached view.
-        onSubmit: ({required name, required price, required category, emoji, imageBytes}) {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false}) {
           catalog
-              .addProduct(name: name, price: price, category: category, emoji: emoji, imageBytes: imageBytes)
+              .addProduct(
+                name: name,
+                price: price,
+                category: category,
+                emoji: emoji,
+                imageBytes: imageBytes,
+                trackStock: trackStock,
+              )
               .catchError((e) {
             if (!context.mounted) return;
             // Rare path — the dialog's own limit check should catch
@@ -121,6 +126,44 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             );
           });
+        },
+      ),
+    );
+  }
+
+  void _openEditProductDialog(BuildContext context, ProductProvider catalog, Product product) {
+    showDialog(
+      context: context,
+      builder: (_) => AddProductDialog(
+        existingCategories: catalog.categoryNames
+            .where((c) => c != ProductProvider.uncategorized)
+            .toList(),
+        editingProduct: product,
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false}) async {
+          try {
+            await catalog.updateProduct(
+              product.id,
+              name: name,
+              price: price,
+              category: category,
+              emoji: emoji,
+              trackStock: trackStock,
+            );
+            if (imageBytes != null) {
+              await catalog.updateProductImage(product.id, imageBytes);
+            }
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: AppColors.slate,
+                content: Text(
+                  "Couldn't save changes — try again",
+                  style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+                ),
+              ),
+            );
+          }
         },
       ),
     );
@@ -232,6 +275,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 product: product,
                 isEditMode: _editMode,
                 onTap: () => cart.add(product),
+                onEdit: () => _openEditProductDialog(context, catalog, product),
                 onDelete: () => _confirmDelete(context, catalog, product),
                 onImageSelected: (bytes) => _onImageSelected(context, catalog, product, bytes),
               );
@@ -247,6 +291,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final cart = context.watch<CartProvider>();
     final catalog = context.watch<ProductProvider>();
 
+    // Live, Supabase-backed category list — replaces the old hardcoded
+    // _categoryTabs. If the currently-selected category no longer
+    // exists (e.g. it was just deleted in Settings), fall back to
+    // 'All' rather than showing an empty grid for a tab that's gone.
+    // "Uncategorized" is a fallback bucket (where products land after
+    // their category is deleted) rather than something a cashier ever
+    // chooses on purpose — hidden from the register nav so it doesn't
+    // clutter the tab list, but products in it are still fully
+    // sellable via "All". Settings still shows it as its own
+    // uneditable/undeletable category so it stays visible for cleanup.
+    final categoryTabs = catalog.categories
+        .where((c) => c != ProductProvider.uncategorized)
+        .toList();
+    if (!categoryTabs.contains(_selectedCategory)) {
+      _selectedCategory = 'All';
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= _wideBreakpoint;
@@ -256,7 +317,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           return Row(
             children: [
               CategorySidebar(
-                categories: _categoryTabs,
+                categories: categoryTabs,
                 selected: _selectedCategory,
                 onSelected: (category) => setState(() => _selectedCategory = category),
               ),
@@ -269,7 +330,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return Column(
           children: [
             CategorySegmentedTabs(
-              categories: _categoryTabs,
+              categories: categoryTabs,
               selected: _selectedCategory,
               onSelected: (category) => setState(() => _selectedCategory = category),
             ),

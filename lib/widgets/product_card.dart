@@ -13,6 +13,7 @@ class ProductCard extends StatefulWidget {
   final Product product;
   final VoidCallback onTap;
   final bool isEditMode;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final ValueChanged<Uint8List>? onImageSelected;
 
@@ -21,6 +22,7 @@ class ProductCard extends StatefulWidget {
     required this.product,
     required this.onTap,
     this.isEditMode = false,
+    this.onEdit,
     this.onDelete,
     this.onImageSelected,
   });
@@ -62,7 +64,7 @@ class _ProductCardState extends State<ProductCard> {
           onTapDown: widget.isEditMode ? null : (_) => setState(() => _pressed = true),
           onTapUp: widget.isEditMode ? null : (_) => setState(() => _pressed = false),
           onTapCancel: widget.isEditMode ? null : () => setState(() => _pressed = false),
-          onTap: widget.isEditMode ? null : widget.onTap,
+          onTap: widget.isEditMode ? widget.onEdit : widget.onTap,
           child: AnimatedScale(
             scale: _pressed ? 0.94 : 1.0,
             duration: const Duration(milliseconds: 90),
@@ -164,6 +166,24 @@ class _ProductCardState extends State<ProductCard> {
             ),
           ),
         ),
+        if (widget.isEditMode)
+          Positioned(
+            top: -8,
+            left: -8,
+            child: GestureDetector(
+              onTap: widget.onEdit,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppColors.tillGreen,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.charcoal, width: 2),
+                ),
+                child: const Icon(Icons.edit, color: Colors.white, size: 13),
+              ),
+            ),
+          ),
         if (widget.isEditMode)
           Positioned(
             top: -8,

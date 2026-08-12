@@ -9,6 +9,10 @@ class Product {
   final int stockQty; // current on-hand count, adjusted via InventoryPanel
                        // or automatically on checkout
   final int lowStockThreshold; // stockQty at/below this shows a LOW badge
+  final bool trackStock; // true = stockQty auto-deducts 1 per unit sold at
+                          // checkout (drinks/cups); false = stockQty is
+                          // manual-only, untouched by sales (e.g. food items
+                          // restocked/counted by hand)
 
   const Product({
     required this.id,
@@ -19,6 +23,7 @@ class Product {
     this.imageUrl,
     this.stockQty = 0,
     this.lowStockThreshold = 5,
+    this.trackStock = false,
   });
 
   bool get isLowStock => stockQty <= lowStockThreshold;
@@ -31,6 +36,7 @@ class Product {
     String? imageUrl,
     int? stockQty,
     int? lowStockThreshold,
+    bool? trackStock,
   }) {
     return Product(
       id: id,
@@ -41,6 +47,7 @@ class Product {
       imageUrl: imageUrl ?? this.imageUrl,
       stockQty: stockQty ?? this.stockQty,
       lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
+      trackStock: trackStock ?? this.trackStock,
     );
   }
 }
