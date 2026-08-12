@@ -39,6 +39,8 @@ class PendingSale {
                   'price': i.price,
                   'quantity': i.quantity,
                   'category': i.category,
+                  'variantId': i.variantId,
+                  'variantName': i.variantName,
                 })
             .toList(),
         'queuedAt': queuedAt.toIso8601String(),
@@ -57,6 +59,8 @@ class PendingSale {
                   price: (i['price'] as num).toDouble(),
                   quantity: i['quantity'] as int,
                   category: i['category'] as String,
+                  variantId: i['variantId'] as String?,
+                  variantName: i['variantName'] as String?,
                 ))
             .toList(),
         queuedAt: DateTime.parse(json['queuedAt'] as String),

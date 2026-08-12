@@ -1,3 +1,5 @@
+import 'product_variant.dart';
+
 class Product {
   final String id;
   final String name;
@@ -13,6 +15,12 @@ class Product {
                           // checkout (drinks/cups); false = stockQty is
                           // manual-only, untouched by sales (e.g. food items
                           // restocked/counted by hand)
+  final List<ProductVariant> variants; // optional sizes (e.g. Medium/Large/
+                          // Grande), each with its own name + price. Empty
+                          // by default, meaning the product just uses its
+                          // own flat `price` above, unchanged from before
+                          // variants existed. Sorted by sortOrder by the
+                          // provider on load.
 
   const Product({
     required this.id,
@@ -24,9 +32,15 @@ class Product {
     this.stockQty = 0,
     this.lowStockThreshold = 5,
     this.trackStock = false,
+    this.variants = const [],
   });
 
   bool get isLowStock => stockQty <= lowStockThreshold;
+
+  /// True when this product should show a size picker instead of adding
+  /// straight to cart. False (the common case) means "behaves exactly
+  /// like before variants existed."
+  bool get hasVariants => variants.isNotEmpty;
 
   Product copyWith({
     String? name,
@@ -37,6 +51,7 @@ class Product {
     int? stockQty,
     int? lowStockThreshold,
     bool? trackStock,
+    List<ProductVariant>? variants,
   }) {
     return Product(
       id: id,
@@ -48,6 +63,7 @@ class Product {
       stockQty: stockQty ?? this.stockQty,
       lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
       trackStock: trackStock ?? this.trackStock,
+      variants: variants ?? this.variants,
     );
   }
 }

@@ -37,12 +37,12 @@ class CartList extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.product.name,
+                    item.displayName,
                     style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '₱${item.product.price.toStringAsFixed(2)} each',
+                    '₱${item.unitPrice.toStringAsFixed(2)} each',
                     style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
                   ),
                 ],
@@ -50,8 +50,8 @@ class CartList extends StatelessWidget {
             ),
             _QtyStepper(
               quantity: item.quantity,
-              onDecrement: () => cart.decrement(item.product.id),
-              onIncrement: () => cart.increment(item.product.id),
+              onDecrement: () => cart.decrement(item.product.id, variantId: item.selectedVariant?.id),
+              onIncrement: () => cart.increment(item.product.id, variantId: item.selectedVariant?.id),
             ),
             const SizedBox(width: 12),
             SizedBox(
@@ -62,7 +62,7 @@ class CartList extends StatelessWidget {
                 style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber),
               ),
             ),
-            _RemoveButton(onTap: () => cart.remove(item.product.id)),
+            _RemoveButton(onTap: () => cart.remove(item.product.id, variantId: item.selectedVariant?.id)),
           ],
         );
       },

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
+import 'product_variant_editor.dart';
 
 /// Form dialog for adding a new product, or editing an existing one
 /// (pass [editingProduct] to switch modes — same fields, pre-filled,
@@ -24,6 +25,7 @@ class AddProductDialog extends StatefulWidget {
     String? emoji,
     Uint8List? imageBytes,
     bool trackStock,
+    List<({String name, double price})> variants,
   }) onSubmit;
 
   /// This store's total-product cap for its plan (ProductProvider.
@@ -70,6 +72,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   String? _existingImageUrl; // edit mode only — shown until a new photo is picked
   bool _pickingImage = false;
   bool _trackStock = false;
+  List<({String name, double price})> _draftVariants = [];
 
   // Deduped, order-preserving copy of widget.existingCategories.
   // DropdownButtonFormField throws an assertion if its `value` isn't
@@ -166,6 +169,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
       emoji: _emojiCtrl.text,
       imageBytes: _imageBytes,
       trackStock: _trackStock,
+      variants: _draftVariants,
     );
     Navigator.of(context).pop();
   }
@@ -333,6 +337,14 @@ class _AddProductDialogState extends State<AddProductDialog> {
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 14),
+              ProductVariantEditor(
+                productId: widget.editingProduct?.id,
+                initialVariants: widget.editingProduct?.variants ?? const [],
+                onDraftVariantsChanged: _isEditing
+                    ? null
+                    : (drafts) => _draftVariants = drafts,
               ),
               const SizedBox(height: 20),
               Row(

@@ -10,6 +10,7 @@ import '../widgets/category_segmented_tabs.dart';
 import '../widgets/product_card.dart';
 import '../widgets/add_product_card.dart';
 import '../widgets/add_product_dialog.dart';
+import '../widgets/product_size_picker_sheet.dart';
 import '../widgets/cart_side_panel.dart';
 import '../widgets/cart_bottom_bar.dart';
 import '../widgets/checkout_modal.dart';
@@ -96,7 +97,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // onUpgradeTap: left unwired until an upgrade screen/flow exists
         // (per the subscription plan doc's build order) — Cancel-only
         // for now on the limit-reached view.
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false}) {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, variants = const []}) {
           catalog
               .addProduct(
                 name: name,
@@ -106,7 +107,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 imageBytes: imageBytes,
                 trackStock: trackStock,
               )
-              .catchError((e) {
+              .then((newId) async {
+            // Sizes were staged locally in the dialog since the
+            // product didn't have an id yet — attach them now that it
+            // does. Fired one at a time (not Future.wait) so a single
+            // failed size doesn't risk an interleaved partial write;
+            // at this volume (a handful of sizes per product) the
+            // sequential round trips are unnoticeable.
+            for (final v in variants) {
+              try {
+                await catalog.addVariant(newId, name: v.name, price: v.price);
+              } catch (e) {
+                debugPrint('Could not add size "${v.name}" to new product $newId: $e');
+              }
+            }
+          }).catchError((e) {
             if (!context.mounted) return;
             // Rare path — the dialog's own limit check should catch
             // this before submit in almost every case; this only fires
@@ -139,7 +154,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             .where((c) => c != ProductProvider.uncategorized)
             .toList(),
         editingProduct: product,
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false}) async {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, variants = const []}) async {
           try {
             await catalog.updateProduct(
               product.id,
@@ -194,6 +209,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _onProductTap(BuildContext context, CartProvider cart, Product product) {
+    if (_editMode) return; // edit mode taps go through onEdit, not onTap
+    if (!product.hasVariants) {
+      cart.add(product);
+      return;
+    }
+    ProductSizePickerSheet.show(
+      context,
+      product: product,
+      onSelected: (variant) => cart.add(product, variant: variant),
     );
   }
 
@@ -274,7 +302,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               return ProductCard(
                 product: product,
                 isEditMode: _editMode,
-                onTap: () => cart.add(product),
+                onTap: () => _onProductTap(context, cart, product),
                 onEdit: () => _openEditProductDialog(context, catalog, product),
                 onDelete: () => _confirmDelete(context, catalog, product),
                 onImageSelected: (bytes) => _onImageSelected(context, catalog, product, bytes),

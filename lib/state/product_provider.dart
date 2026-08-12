@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
+import '../models/product_variant.dart';
 import '../models/transaction.dart';
 
 /// Product catalog state, backed by Supabase (categories/products
@@ -153,7 +154,7 @@ class ProductProvider extends ChangeNotifier {
 
       final productRows = await _client
           .from('products')
-          .select('*, categories(name)')
+          .select('*, categories(name), product_variants(*)')
           .order('created_at');
 
       _products = (productRows as List)
@@ -174,6 +175,11 @@ class ProductProvider extends ChangeNotifier {
     final categoryName =
         (row['categories'] as Map<String, dynamic>?)?['name'] as String? ??
             uncategorized;
+    final variantRows = (row['product_variants'] as List?) ?? const [];
+    final variants = variantRows
+        .map((v) => ProductVariant.fromRow(v as Map<String, dynamic>))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     return Product(
       id: row['id'] as String,
       name: row['name'] as String,
@@ -184,6 +190,7 @@ class ProductProvider extends ChangeNotifier {
       stockQty: row['stock_qty'] as int,
       lowStockThreshold: row['low_stock_threshold'] as int,
       trackStock: row['track_stock'] as bool? ?? false,
+      variants: variants,
     );
   }
 
@@ -278,7 +285,11 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addProduct({
+  /// Returns the new product's id — needed by callers that stage
+  /// variants (sizes) in the add-product dialog before the product
+  /// exists yet, so they can attach them right after creation via
+  /// [addVariant].
+  Future<String> addProduct({
     required String name,
     required double price,
     required String category,
@@ -305,7 +316,9 @@ class ProductProvider extends ChangeNotifier {
       await addCategory(category);
     }
     final categoryId = _categoryIds[category];
-    if (categoryId == null) return;
+    if (categoryId == null) {
+      throw StateError('Could not resolve category id for "$category"');
+    }
 
     try {
       final row = await _client
@@ -359,6 +372,7 @@ class ProductProvider extends ChangeNotifier {
         trackStock: trackStock,
       ));
       notifyListeners();
+      return newId;
     } catch (e) {
       // The real gate: enforce_product_limit trigger rejects the
       // insert server-side (errcode P0001) if the local pre-check
@@ -459,6 +473,124 @@ class ProductProvider extends ChangeNotifier {
       await _client.from('products').delete().eq('id', id);
     } catch (e) {
       _products.insert(index, removed);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Adds a size/option to a product (e.g. "Large" for ₱110). Not
+  /// optimistic — the row is inserted first so the new variant gets a
+  /// real id before it lands in local state, since [updateVariant] and
+  /// [deleteVariant] key off that id. Toggling "this product has
+  /// sizes" on in the admin UI is just calling this once; the product
+  /// itself needs no separate flag (see [Product.hasVariants]).
+  Future<void> addVariant(
+    String productId, {
+    required String name,
+    required double price,
+  }) async {
+    final index = _products.indexWhere((p) => p.id == productId);
+    if (index < 0) return;
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return;
+
+    final currentVariants = _products[index].variants;
+    final nextSortOrder = currentVariants.isEmpty
+        ? 0
+        : currentVariants.map((v) => v.sortOrder).reduce((a, b) => a > b ? a : b) + 1;
+
+    final row = await _client
+        .from('product_variants')
+        .insert({
+          'product_id': productId,
+          'name': trimmedName,
+          'price': price,
+          'sort_order': nextSortOrder,
+        })
+        .select()
+        .single();
+
+    final variant = ProductVariant.fromRow(row);
+    _products[index] = _products[index].copyWith(
+      variants: [...currentVariants, variant],
+    );
+    notifyListeners();
+  }
+
+  /// Renames and/or repriced an existing size. Optimistic — the size
+  /// list in the admin editor updates instantly, rolled back if the
+  /// write fails.
+  Future<void> updateVariant(
+    String variantId, {
+    String? name,
+    double? price,
+  }) async {
+    var productIndex = -1;
+    var variantIndex = -1;
+    for (var i = 0; i < _products.length; i++) {
+      final vi = _products[i].variants.indexWhere((v) => v.id == variantId);
+      if (vi >= 0) {
+        productIndex = i;
+        variantIndex = vi;
+        break;
+      }
+    }
+    if (productIndex < 0) return;
+
+    final trimmedName = name?.trim();
+    if (trimmedName != null && trimmedName.isEmpty) return;
+
+    final previousVariants = _products[productIndex].variants;
+    final previous = previousVariants[variantIndex];
+    final updated = previous.copyWith(name: trimmedName, price: price);
+
+    final nextVariants = [...previousVariants];
+    nextVariants[variantIndex] = updated;
+    _products[productIndex] = _products[productIndex].copyWith(variants: nextVariants);
+    notifyListeners();
+
+    try {
+      await _client.from('product_variants').update({
+        if (trimmedName != null) 'name': trimmedName,
+        if (price != null) 'price': price,
+      }).eq('id', variantId);
+    } catch (e) {
+      final rollback = [...previousVariants];
+      _products[productIndex] = _products[productIndex].copyWith(variants: rollback);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Removes a size. Optimistic with rollback, same pattern as
+  /// [removeProduct]. Existing sale records keep their
+  /// variant_name/variant_id snapshot on transaction_line_items
+  /// regardless (variant_id set null via ON DELETE SET NULL, the name
+  /// text stays put) — deleting a size never rewrites past receipts.
+  Future<void> deleteVariant(String variantId) async {
+    var productIndex = -1;
+    var variantIndex = -1;
+    for (var i = 0; i < _products.length; i++) {
+      final vi = _products[i].variants.indexWhere((v) => v.id == variantId);
+      if (vi >= 0) {
+        productIndex = i;
+        variantIndex = vi;
+        break;
+      }
+    }
+    if (productIndex < 0) return;
+
+    final previousVariants = _products[productIndex].variants;
+    final removed = previousVariants[variantIndex];
+    final nextVariants = [...previousVariants]..removeAt(variantIndex);
+    _products[productIndex] = _products[productIndex].copyWith(variants: nextVariants);
+    notifyListeners();
+
+    try {
+      await _client.from('product_variants').delete().eq('id', variantId);
+    } catch (e) {
+      final rollback = [...nextVariants]..insert(variantIndex, removed);
+      _products[productIndex] = _products[productIndex].copyWith(variants: rollback);
       notifyListeners();
       rethrow;
     }

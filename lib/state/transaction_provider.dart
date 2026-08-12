@@ -112,6 +112,8 @@ class TransactionProvider extends ChangeNotifier {
               'unit_price': li.price,
               'quantity': li.quantity,
               'line_total': li.lineTotal,
+              'variant_id': li.variantId,
+              'variant_name': li.variantName,
             })
         .toList();
   }
@@ -320,6 +322,8 @@ class TransactionProvider extends ChangeNotifier {
                 price: (li['unit_price'] as num).toDouble(),
                 quantity: li['quantity'] as int,
                 category: li['category'] as String,
+                variantId: li['variant_id'] as String?,
+                variantName: li['variant_name'] as String?,
               ))
           .toList(),
       total: (row['total'] as num).toDouble(),

@@ -5,10 +5,21 @@ import 'cart_item.dart';
 /// delete never changes a past transaction's record.
 class TransactionLineItem {
   final String productId;
-  final String name;
-  final double price;
+  final String name; // includes the size, e.g. "Coffee (Large)" — see
+                      // TransactionLineItem.fromCartItem
+  final double price; // unit price actually charged — the variant's
+                       // price when one was selected, else the
+                       // product's own flat price
   final int quantity;
   final String category;
+  // Size snapshot, present only when a variant was selected. Kept
+  // separately from `name` (which already has the size baked in for
+  // display) so sales-by-size reporting doesn't have to parse it back
+  // out of the combined name string. Both stay put even if the size
+  // is later renamed or deleted — variant_id -> null via ON DELETE
+  // SET NULL, but variant_name/name (the text snapshot) never changes.
+  final String? variantId;
+  final String? variantName;
 
   const TransactionLineItem({
     required this.productId,
@@ -16,6 +27,8 @@ class TransactionLineItem {
     required this.price,
     required this.quantity,
     required this.category,
+    this.variantId,
+    this.variantName,
   });
 
   double get lineTotal => price * quantity;
@@ -23,10 +36,12 @@ class TransactionLineItem {
   factory TransactionLineItem.fromCartItem(CartItem item) {
     return TransactionLineItem(
       productId: item.product.id,
-      name: item.product.name,
-      price: item.product.price,
+      name: item.displayName,
+      price: item.unitPrice,
       quantity: item.quantity,
       category: item.product.category,
+      variantId: item.selectedVariant?.id,
+      variantName: item.selectedVariant?.name,
     );
   }
 }
