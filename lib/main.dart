@@ -4,7 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'theme/app_theme.dart';
 import 'models/user.dart';
 import 'state/cart_provider.dart';
+import 'state/ingredient_provider.dart';
 import 'state/product_provider.dart';
+import 'state/recipe_provider.dart';
+import 'state/store_provider.dart';
 import 'state/transaction_provider.dart';
 import 'state/user_provider.dart';
 import 'screens/login_screen.dart';
@@ -40,7 +43,10 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => IngredientProvider()),
         ChangeNotifierProvider(create: (_) => ProductProvider()),
+        ChangeNotifierProvider(create: (_) => RecipeProvider()),
+        ChangeNotifierProvider(create: (_) => StoreProvider()),
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
       ],

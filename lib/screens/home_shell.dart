@@ -11,6 +11,8 @@ import 'reports_screen.dart';
 import 'settings_panel.dart';
 import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
+import '../state/ingredient_provider.dart';
+import '../state/recipe_provider.dart';
 
 enum _Section { register, transactions, reports, settings }
 
@@ -86,9 +88,20 @@ class _HomeShellState extends State<HomeShell> {
     if (transactionProvider.pendingCount == 0) return;
 
     final productProvider = context.read<ProductProvider>();
+    final recipeProvider = context.read<RecipeProvider>();
+    final ingredientProvider = context.read<IngredientProvider>();
     _syncingFromConnectivity = true;
     transactionProvider
-        .syncPending(deductStock: productProvider.deductStockForLineItems)
+        .syncPending(deductStock: (items) async {
+          await productProvider.deductStockForLineItems(items);
+          try {
+            await recipeProvider.deductForLineItems(items, ingredientProvider);
+          } catch (_) {
+            // Swallowed deliberately, same reasoning as login_screen.dart's
+            // sync call — negative-stock policy is allow/no-warning, and a
+            // failure here shouldn't block the rest of the offline queue.
+          }
+        })
         .whenComplete(() => _syncingFromConnectivity = false);
   }
 

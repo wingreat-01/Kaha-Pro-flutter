@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../state/ingredient_provider.dart';
+import '../state/store_provider.dart';
+import 'ingredients_panel.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'categories_panel.dart';
@@ -19,6 +23,9 @@ class SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = context.watch<StoreProvider>().businessTypeLabel;
+    final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
+
     return BoundedContent(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -46,6 +53,17 @@ class SettingsPanel extends StatelessWidget {
           subtitle: 'Manage the full catalog & stock levels',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const InventoryPanel()),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.inventory_outlined,
+          label: label,
+          subtitle: lowStockCount > 0
+              ? '$lowStockCount running low'
+              : 'Raw materials & supplies stock',
+          badgeCount: lowStockCount,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const IngredientsPanel()),
           ),
         ),
         const SizedBox(height: 24),
@@ -87,12 +105,14 @@ class _SettingsRow extends StatelessWidget {
   final String label;
   final String subtitle;
   final VoidCallback? onTap;
+  final int badgeCount;
 
   const _SettingsRow({
     required this.icon,
     required this.label,
     required this.subtitle,
     this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -129,10 +149,36 @@ class _SettingsRow extends StatelessWidget {
                   children: [
                     Text(label, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text(subtitle, style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+                    Text(
+                      subtitle,
+                      style: AppTextStyles.body(
+                        size: 12,
+                        // Same red used for the LOW badge in Inventory/
+                        // Ingredients rows — this subtitle is standing
+                        // in for that same signal one level up the nav.
+                        color: badgeCount > 0 ? AppColors.ledgerRed : AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
+              if (badgeCount > 0) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  constraints: const BoxConstraints(minWidth: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.ledgerRed,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    badgeCount > 99 ? '99+' : '$badgeCount',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.mono(size: 10.5, weight: FontWeight.w700, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
             ],
           ),

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 import 'product_variant_editor.dart';
+import 'recipe_editor.dart';
 
 /// Form dialog for adding a new product, or editing an existing one
 /// (pass [editingProduct] to switch modes — same fields, pre-filled,
@@ -28,6 +29,7 @@ class AddProductDialog extends StatefulWidget {
     String unit,
     String? unitLabel,
     List<({String name, double price})> variants,
+    List<({String ingredientId, double quantityUsed})> recipeItems,
   }) onSubmit;
 
   /// This store's total-product cap for its plan (ProductProvider.
@@ -77,6 +79,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   String _unit = 'pc';
   final _unitLabelCtrl = TextEditingController();
   List<({String name, double price})> _draftVariants = [];
+  List<({String ingredientId, double quantityUsed})> _draftRecipeItems = [];
 
   // Deduped, order-preserving copy of widget.existingCategories.
   // DropdownButtonFormField throws an assertion if its `value` isn't
@@ -183,6 +186,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
       unit: _unit,
       unitLabel: _unit == 'custom' ? _unitLabelCtrl.text.trim() : null,
       variants: _draftVariants,
+      recipeItems: _draftRecipeItems,
     );
     Navigator.of(context).pop();
   }
@@ -380,6 +384,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 onDraftVariantsChanged: _isEditing
                     ? null
                     : (drafts) => _draftVariants = drafts,
+              ),
+              const SizedBox(height: 14),
+              RecipeEditor(
+                productId: widget.editingProduct?.id,
+                onDraftRecipeItemsChanged: _isEditing
+                    ? null
+                    : (drafts) => _draftRecipeItems = drafts,
               ),
               const SizedBox(height: 20),
               Row(

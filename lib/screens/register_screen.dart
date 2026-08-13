@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../state/cart_provider.dart';
 import '../state/product_provider.dart';
+import '../state/recipe_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/category_sidebar.dart';
 import '../widgets/category_segmented_tabs.dart';
@@ -84,6 +85,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _openAddProductDialog(BuildContext context, ProductProvider catalog) {
+    // Captured here (not inside onSubmit) same reasoning as catalog
+    // itself — this method already runs with a valid context, and the
+    // onSubmit closure below fires later, after the dialog's Navigator
+    // pop, when context.read would still work but there's no reason
+    // to re-fetch it.
+    final recipes = context.read<RecipeProvider>();
     // catalog.categoryNames is already the live, Supabase-backed list
     // (no 'All' in it), so the dialog's dropdown can use it directly —
     // no need to reconcile it against a separate hardcoded tab list.
@@ -97,7 +104,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // onUpgradeTap: left unwired until an upgrade screen/flow exists
         // (per the subscription plan doc's build order) — Cancel-only
         // for now on the limit-reached view.
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const []}) {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const []}) {
           catalog
               .addProduct(
                 name: name,
@@ -121,6 +128,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 await catalog.addVariant(newId, name: v.name, price: v.price);
               } catch (e) {
                 debugPrint('Could not add size "${v.name}" to new product $newId: $e');
+              }
+            }
+            // Same staged-then-attach pattern for recipe rows — the
+            // recipe editor couldn't write to product_recipe_items
+            // without a product_id either, so its drafts land here too.
+            for (final r in recipeItems) {
+              try {
+                await recipes.addItem(
+                  productId: newId,
+                  ingredientId: r.ingredientId,
+                  quantityUsed: r.quantityUsed,
+                );
+              } catch (e) {
+                debugPrint('Could not add recipe item to new product $newId: $e');
               }
             }
           }).catchError((e) {
@@ -156,7 +177,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             .where((c) => c != ProductProvider.uncategorized)
             .toList(),
         editingProduct: product,
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const []}) async {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const []}) async {
           try {
             await catalog.updateProduct(
               product.id,

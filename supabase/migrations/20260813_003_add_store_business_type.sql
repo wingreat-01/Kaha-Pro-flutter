@@ -5,20 +5,35 @@
 -- defaults -- a one-line label swap read from this column, never a
 -- schema or logic fork (see kahapro-inventory-recipes-plan.md Step 0).
 --
--- Backward-compatible: existing rows get 'general' (the safe default
--- label "Raw Materials"), matching today's behavior exactly.
+-- Idempotent -- safe to re-run. The column already exists on this
+-- database (added by an earlier partial run), so this version checks
+-- before adding it and before adding the constraint, instead of
+-- failing outright the way a plain ALTER TABLE ADD COLUMN would.
 
-alter table stores
-  add column business_type text not null default 'general';
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'stores' and column_name = 'business_type'
+  ) then
+    alter table stores
+      add column business_type text not null default 'general';
+  end if;
+end $$;
 
-alter table stores
-  add constraint stores_business_type_check
-  check (business_type in ('food_beverage', 'retail_hardware', 'general'));
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'stores_business_type_check'
+  ) then
+    alter table stores
+      add constraint stores_business_type_check
+      check (business_type in ('food_beverage', 'retail_hardware', 'general'));
+  end if;
+end $$;
 
--- handle_new_user() now also reads business_type out of signup
--- metadata, same pattern as store_name. Defaults to 'general' if the
--- picker wasn't shown/selected for some reason (e.g. an older client
--- build), so this never blocks store creation.
+-- CREATE OR REPLACE is already idempotent -- safe to re-run regardless
+-- of the column/constraint state above.
 create or replace function handle_new_user()
 returns trigger
 language plpgsql

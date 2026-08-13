@@ -5,7 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user.dart';
 import '../state/cart_provider.dart';
+import '../state/ingredient_provider.dart';
 import '../state/product_provider.dart';
+import '../state/recipe_provider.dart';
+import '../state/store_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -97,11 +100,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Fetch-once-on-login (Phase D + Phase F) — load this store's
       // catalog and transaction history before HomeShell shows. Run in
-      // parallel since neither depends on the other's result.
+      // parallel since neither depends on the other's result. Also
+      // loads the store record and the ingredients list the same way —
+      // nothing downstream depends on either.
       final productProvider = context.read<ProductProvider>();
       await Future.wait([
         productProvider.loadFromSupabase(),
         context.read<TransactionProvider>().loadFromSupabase(),
+        context.read<StoreProvider>().loadFromSupabase(),
+        context.read<IngredientProvider>().loadFromSupabase(),
       ]);
 
       // Phase E — restore any cart left over from a previous session
@@ -116,9 +123,26 @@ class _LoginScreenState extends State<LoginScreen> {
       // ProductProvider without the two providers needing to reference
       // each other directly. Fire-and-forget — login shouldn't block
       // on however long a queue of offline sales takes to replay.
+      //
+      // recipeProvider/ingredientProvider captured here for the same
+      // reason productProvider already was — this closure fires later,
+      // after this method has returned.
+      final recipeProvider = context.read<RecipeProvider>();
+      final ingredientProvider = context.read<IngredientProvider>();
       unawaited(
         context.read<TransactionProvider>().syncPending(
-              deductStock: (items) => productProvider.deductStockForLineItems(items),
+              deductStock: (items) async {
+                await productProvider.deductStockForLineItems(items);
+                try {
+                  await recipeProvider.deductForLineItems(items, ingredientProvider);
+                } catch (_) {
+                  // Swallowed deliberately, same reasoning as
+                  // checkout_modal.dart's live-sale deduction —
+                  // negative-stock policy is allow/no-warning, and a
+                  // failure here shouldn't block the rest of the
+                  // offline queue from retrying.
+                }
+              },
             ),
       );
 

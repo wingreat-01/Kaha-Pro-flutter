@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/cart_provider.dart';
+import '../state/ingredient_provider.dart';
 import '../state/product_provider.dart';
+import '../state/recipe_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 import 'led_total.dart';
@@ -169,6 +171,27 @@ class _CheckoutModalState extends State<CheckoutModal> {
         await context.read<ProductProvider>().deductStockForSale(soldItems);
       } catch (_) {
         // Swallowed deliberately — see note above.
+      }
+
+      // Recipe-based ingredient deduction (Step 5) — same
+      // fire-and-catch reasoning as the product stock deduction just
+      // above: if this sale is queued offline, there's no recipe data
+      // to look up reliably yet anyway, and TransactionProvider.
+      // syncPending() is the real retry path once it syncs. Computing
+      // the deductions and writing them are two separate awaited
+      // calls (not combined) so a failure in one doesn't obscure
+      // whether the lookup or the write actually failed, though both
+      // paths are swallowed here identically either way.
+      try {
+        final deductions =
+            await context.read<RecipeProvider>().computeDeductionsForSale(soldItems);
+        if (deductions.isNotEmpty) {
+          await context.read<IngredientProvider>().deductStockForSale(deductions);
+        }
+      } catch (_) {
+        // Swallowed deliberately — negative-stock policy is allow, no
+        // warning, and a lookup/write failure here shouldn't block or
+        // taint an already-recorded sale.
       }
 
       widget.cart.clear();
