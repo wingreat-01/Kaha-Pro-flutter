@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../state/product_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/bounded_content.dart';
 
 /// Real inventory list/add/edit panel — reached from Settings → Products.
 /// Shows every product with its current stock, flags anything at or
@@ -36,35 +37,37 @@ class InventoryPanel extends StatelessWidget {
           style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, letterSpacing: 1),
         ),
       ),
-      body: catalog.products.isEmpty
-          ? Center(
-              child: Text(
-                'No products in the catalog yet.',
-                style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                for (final category in categories) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
-                    child: Text(
-                      category.toUpperCase(),
-                      style: AppTextStyles.mono(
-                        size: 11,
-                        weight: FontWeight.w700,
-                        color: AppColors.textMuted,
-                        letterSpacing: 2,
+      body: BoundedContent(
+        child: catalog.products.isEmpty
+            ? Center(
+                child: Text(
+                  'No products in the catalog yet.',
+                  style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+                ),
+              )
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  for (final category in categories) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+                      child: Text(
+                        category.toUpperCase(),
+                        style: AppTextStyles.mono(
+                          size: 11,
+                          weight: FontWeight.w700,
+                          color: AppColors.textMuted,
+                          letterSpacing: 2,
+                        ),
                       ),
                     ),
-                  ),
-                  for (final product in byCategory[category]!)
-                    _InventoryRow(product: product, catalog: catalog),
-                  const SizedBox(height: 10),
+                    for (final product in byCategory[category]!)
+                      _InventoryRow(product: product, catalog: catalog),
+                    const SizedBox(height: 10),
+                  ],
                 ],
-              ],
-            ),
+              ),
+      ),
     );
   }
 }

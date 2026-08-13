@@ -4,6 +4,7 @@ import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../state/product_provider.dart';
 import '../widgets/reassign_category_dialog.dart';
+import '../widgets/bounded_content.dart';
 
 /// Categories admin panel — reached via Settings → Categories. Categories
 /// are now a real stored list (see ProductProvider), so this can add an
@@ -32,10 +33,12 @@ class CategoriesPanel extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Add category'),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-        itemCount: categories.length,
-        itemBuilder: (context, i) => _CategoryRow(name: categories[i]),
+      body: BoundedContent(
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          itemCount: categories.length,
+          itemBuilder: (context, i) => _CategoryRow(name: categories[i]),
+        ),
       ),
     );
   }
@@ -270,61 +273,63 @@ class _CategoryProductsView extends StatelessWidget {
         elevation: 0,
         title: Text(categoryName, style: AppTextStyles.mono(size: 16, weight: FontWeight.w700)),
       ),
-      body: products.isEmpty
-          ? Center(
-              child: Text(
-                'No products here',
-                style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: products.length,
-              itemBuilder: (context, i) {
-                final p = products[i];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.slate,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.slateBorder, width: 1),
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => _showProductActions(context, p),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(p.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  p.isLowStock ? 'Stock: ${p.stockQty} • LOW' : 'Stock: ${p.stockQty}',
-                                  style: AppTextStyles.body(
-                                    size: 12,
-                                    color: p.isLowStock ? AppColors.ledgerRed : AppColors.textSecondary,
+      body: BoundedContent(
+        child: products.isEmpty
+            ? Center(
+                child: Text(
+                  'No products here',
+                  style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: products.length,
+                itemBuilder: (context, i) {
+                  final p = products[i];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.slate,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.slateBorder, width: 1),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => _showProductActions(context, p),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(p.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    p.isLowStock ? 'Stock: ${p.stockQty} • LOW' : 'Stock: ${p.stockQty}',
+                                    style: AppTextStyles.body(
+                                      size: 12,
+                                      color: p.isLowStock ? AppColors.ledgerRed : AppColors.textSecondary,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          Text(
-                            '₱${p.price.toStringAsFixed(2)}',
-                            style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
-                        ],
+                            Text(
+                              '₱${p.price.toStringAsFixed(2)}',
+                              style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

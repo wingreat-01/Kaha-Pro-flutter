@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/user.dart';
 import '../state/user_provider.dart';
+import '../widgets/bounded_content.dart';
 
 /// Users admin panel — reached via Settings → Users. Lists staff accounts
 /// (name, role) with add/edit/delete, backed by Supabase's staff_users
@@ -47,30 +48,32 @@ class _UsersPanelState extends State<UsersPanel> {
         icon: const Icon(Icons.add),
         label: const Text('Add user'),
       ),
-      body: provider.loading && users.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : provider.error != null && users.isEmpty
-              ? Center(
-                  child: Text(
-                    provider.error!,
-                    style: AppTextStyles.body(size: 14, color: AppColors.ledgerRed),
-                  ),
-                )
-              : users.isEmpty
-                  ? Center(
-                      child: Text(
-                        'No users yet',
-                        style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () => context.read<UserProvider>().loadFromSupabase(),
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                        itemCount: users.length,
-                        itemBuilder: (context, i) => _UserRow(user: users[i]),
-                      ),
+      body: BoundedContent(
+        child: provider.loading && users.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : provider.error != null && users.isEmpty
+                ? Center(
+                    child: Text(
+                      provider.error!,
+                      style: AppTextStyles.body(size: 14, color: AppColors.ledgerRed),
                     ),
+                  )
+                : users.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No users yet',
+                          style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: () => context.read<UserProvider>().loadFromSupabase(),
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                          itemCount: users.length,
+                          itemBuilder: (context, i) => _UserRow(user: users[i]),
+                        ),
+                      ),
+      ),
     );
   }
 

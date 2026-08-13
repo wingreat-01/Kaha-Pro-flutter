@@ -40,6 +40,12 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   String? _error;
   String? _info;
 
+  // Defaults to 'general' ("Raw Materials") -- matches the
+  // backward-compatible default on the stores.business_type column,
+  // so an owner who doesn't touch this selector still gets a sane
+  // label instead of an unset/null value.
+  String _businessType = 'general';
+
   Future<void> _submit() async {
     setState(() {
       _error = null;
@@ -78,7 +84,10 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
         final res = await Supabase.instance.client.auth.signUp(
           email: email,
           password: password,
-          data: {'store_name': storeName},
+          data: {
+            'store_name': storeName,
+            'business_type': _businessType,
+          },
         );
 
         if (res.session == null) {
@@ -181,6 +190,11 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                   if (!_isSignIn) ...[
                     _SetupField(label: 'Store Name', controller: _storeNameCtrl, hint: 'e.g. Kaha Café'),
                     const SizedBox(height: 14),
+                    _BusinessTypePicker(
+                      value: _businessType,
+                      onChanged: (v) => setState(() => _businessType = v),
+                    ),
+                    const SizedBox(height: 14),
                   ],
                   _SetupField(label: 'Email', controller: _emailCtrl, hint: 'you@email.com'),
                   const SizedBox(height: 14),
@@ -223,6 +237,84 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Three-way picker for stores.business_type. Values match the DB
+/// check constraint exactly (see 003_add_store_business_type.sql):
+/// 'food_beverage' | 'retail_hardware' | 'general'.
+class _BusinessTypePicker extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  const _BusinessTypePicker({required this.value, required this.onChanged});
+
+  static const _options = [
+    (value: 'food_beverage', label: 'Café / Food'),
+    (value: 'retail_hardware', label: 'Retail / Hardware'),
+    (value: 'general', label: 'General'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'What kind of business?',
+          style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (final opt in _options) ...[
+              Expanded(child: _Chip(
+                label: opt.label,
+                selected: value == opt.value,
+                onTap: () => onChanged(opt.value),
+              )),
+              if (opt != _options.last) const SizedBox(width: 8),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _Chip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.ledAmber.withOpacity(0.14) : AppColors.slateField,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? AppColors.ledAmber : AppColors.slateBorder,
+            width: 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.body(
+            size: 12,
+            color: selected ? AppColors.ledAmber : AppColors.textMuted,
           ),
         ),
       ),

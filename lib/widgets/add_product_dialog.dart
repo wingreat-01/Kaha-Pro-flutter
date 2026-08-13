@@ -25,6 +25,8 @@ class AddProductDialog extends StatefulWidget {
     String? emoji,
     Uint8List? imageBytes,
     bool trackStock,
+    String unit,
+    String? unitLabel,
     List<({String name, double price})> variants,
   }) onSubmit;
 
@@ -72,6 +74,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
   String? _existingImageUrl; // edit mode only — shown until a new photo is picked
   bool _pickingImage = false;
   bool _trackStock = false;
+  String _unit = 'pc';
+  final _unitLabelCtrl = TextEditingController();
   List<({String name, double price})> _draftVariants = [];
 
   // Deduped, order-preserving copy of widget.existingCategories.
@@ -94,6 +98,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
       _emojiCtrl.text = editing.emoji ?? '';
       _existingImageUrl = editing.imageUrl;
       _trackStock = editing.trackStock;
+      _unit = kProductUnits.contains(editing.unit) ? editing.unit : 'pc';
+      _unitLabelCtrl.text = editing.unitLabel ?? '';
     }
 
     final initial = widget.initialCategory ?? editing?.category;
@@ -123,6 +129,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
     _priceCtrl.dispose();
     _emojiCtrl.dispose();
     _newCategoryCtrl.dispose();
+    _unitLabelCtrl.dispose();
     super.dispose();
   }
 
@@ -161,6 +168,10 @@ class _AddProductDialogState extends State<AddProductDialog> {
       setState(() => _error = 'Pick or enter a category.');
       return;
     }
+    if (_unit == 'custom' && _unitLabelCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Enter a name for the custom unit.');
+      return;
+    }
 
     widget.onSubmit(
       name: name,
@@ -169,6 +180,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
       emoji: _emojiCtrl.text,
       imageBytes: _imageBytes,
       trackStock: _trackStock,
+      unit: _unit,
+      unitLabel: _unit == 'custom' ? _unitLabelCtrl.text.trim() : null,
       variants: _draftVariants,
     );
     Navigator.of(context).pop();
@@ -339,6 +352,28 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 ),
               ),
               const SizedBox(height: 14),
+              if (_trackStock) ...[
+                Text('Unit', style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1)),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: _unit,
+                  dropdownColor: AppColors.slate,
+                  style: AppTextStyles.body(size: 14),
+                  decoration: const InputDecoration(),
+                  items: kProductUnits
+                      .map((u) => DropdownMenuItem(
+                            value: u,
+                            child: Text(u == 'custom' ? 'Custom…' : u),
+                          ))
+                      .toList(),
+                  onChanged: (value) => setState(() => _unit = value ?? 'pc'),
+                ),
+                if (_unit == 'custom') ...[
+                  const SizedBox(height: 10),
+                  _field('', _unitLabelCtrl, hint: 'e.g. roll, bundle, meter'),
+                ],
+                const SizedBox(height: 14),
+              ],
               ProductVariantEditor(
                 productId: widget.editingProduct?.id,
                 initialVariants: widget.editingProduct?.variants ?? const [],

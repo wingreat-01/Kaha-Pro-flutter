@@ -97,7 +97,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // onUpgradeTap: left unwired until an upgrade screen/flow exists
         // (per the subscription plan doc's build order) — Cancel-only
         // for now on the limit-reached view.
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, variants = const []}) {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const []}) {
           catalog
               .addProduct(
                 name: name,
@@ -106,6 +106,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 emoji: emoji,
                 imageBytes: imageBytes,
                 trackStock: trackStock,
+                unit: unit,
+                unitLabel: unitLabel,
               )
               .then((newId) async {
             // Sizes were staged locally in the dialog since the
@@ -154,7 +156,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             .where((c) => c != ProductProvider.uncategorized)
             .toList(),
         editingProduct: product,
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, variants = const []}) async {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const []}) async {
           try {
             await catalog.updateProduct(
               product.id,
@@ -163,6 +165,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               category: category,
               emoji: emoji,
               trackStock: trackStock,
+              unit: unit,
+              unitLabel: unitLabel,
             );
             if (imageBytes != null) {
               await catalog.updateProductImage(product.id, imageBytes);

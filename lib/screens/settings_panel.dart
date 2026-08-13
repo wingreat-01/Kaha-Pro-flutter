@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'categories_panel.dart';
+import '../widgets/bounded_content.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -18,9 +19,10 @@ class SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
+    return BoundedContent(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
         const _SettingsSectionLabel('ADMIN'),
         _SettingsRow(
           icon: Icons.people_outline,
@@ -58,7 +60,8 @@ class SettingsPanel extends StatelessWidget {
           label: 'About',
           subtitle: 'Version, support',
         ),
-      ],
+        ],
+      ),
     );
   }
 }

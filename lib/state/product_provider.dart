@@ -190,6 +190,8 @@ class ProductProvider extends ChangeNotifier {
       stockQty: row['stock_qty'] as int,
       lowStockThreshold: row['low_stock_threshold'] as int,
       trackStock: row['track_stock'] as bool? ?? false,
+      unit: row['unit'] as String? ?? 'pc',
+      unitLabel: row['unit_label'] as String?,
       variants: variants,
     );
   }
@@ -298,6 +300,8 @@ class ProductProvider extends ChangeNotifier {
     int stockQty = 0,
     int lowStockThreshold = 5,
     bool trackStock = false,
+    String unit = 'pc',
+    String? unitLabel,
   }) async {
     // Local pre-check — catches the common case instantly, no network
     // round trip, and avoids creating a new category (addCategory
@@ -331,6 +335,8 @@ class ProductProvider extends ChangeNotifier {
             'stock_qty': stockQty,
             'low_stock_threshold': lowStockThreshold,
             'track_stock': trackStock,
+            'unit': unit,
+            'unit_label': (unitLabel == null || unitLabel.trim().isEmpty) ? null : unitLabel.trim(),
           })
           .select()
           .single();
@@ -370,6 +376,8 @@ class ProductProvider extends ChangeNotifier {
         stockQty: stockQty,
         lowStockThreshold: lowStockThreshold,
         trackStock: trackStock,
+        unit: unit,
+        unitLabel: (unitLabel == null || unitLabel.trim().isEmpty) ? null : unitLabel.trim(),
       ));
       notifyListeners();
       return newId;
@@ -396,6 +404,8 @@ class ProductProvider extends ChangeNotifier {
     required String category,
     String? emoji,
     bool? trackStock,
+    String? unit,
+    String? unitLabel,
   }) async {
     final index = _products.indexWhere((p) => p.id == id);
     if (index < 0) return;
@@ -409,6 +419,8 @@ class ProductProvider extends ChangeNotifier {
 
     final trimmedEmoji = (emoji == null || emoji.trim().isEmpty) ? null : emoji.trim();
     final resolvedTrackStock = trackStock ?? previous.trackStock;
+    final resolvedUnit = unit ?? previous.unit;
+    final resolvedUnitLabel = unit == null ? previous.unitLabel : unitLabel;
 
     _products[index] = Product(
       id: previous.id,
@@ -420,6 +432,9 @@ class ProductProvider extends ChangeNotifier {
       stockQty: previous.stockQty,
       lowStockThreshold: previous.lowStockThreshold,
       trackStock: resolvedTrackStock,
+      unit: resolvedUnit,
+      unitLabel: resolvedUnitLabel,
+      variants: previous.variants,
     );
     notifyListeners();
 
@@ -430,6 +445,8 @@ class ProductProvider extends ChangeNotifier {
         'category_id': categoryId,
         'emoji': trimmedEmoji,
         'track_stock': resolvedTrackStock,
+        'unit': resolvedUnit,
+        'unit_label': resolvedUnitLabel,
       }).eq('id', id);
     } catch (e) {
       _products[index] = previous;
