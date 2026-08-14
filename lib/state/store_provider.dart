@@ -32,7 +32,9 @@ class StoreProvider extends ChangeNotifier {
 
   /// False until the store has loaded -- defaults open, not locked,
   /// so a slow/failed load never accidentally banner-locks a real
-  /// active store. Only true once we've actually confirmed plan == 'expired'.
+  /// active store. True once the store's plan == 'expired' (manual
+  /// testing override) or its real plan_expires_at date has passed --
+  /// see Store.isExpired.
   bool get isExpired => _store?.isExpired ?? false;
 
   Future<void> loadFromSupabase() async {
@@ -43,7 +45,7 @@ class StoreProvider extends ChangeNotifier {
     try {
       final row = await _client
           .from('stores')
-          .select('id, name, business_type, plan')
+          .select('id, name, business_type, plan, plan_expires_at')
           .single();
       _store = Store.fromRow(row);
       isLoading = false;
