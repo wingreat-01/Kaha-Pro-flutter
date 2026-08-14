@@ -241,6 +241,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           : const Text('Sign in'),
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Forgot your PIN? Ask your admin to reset it in Settings → Users.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+                  ),
                 ],
               ),
             ),

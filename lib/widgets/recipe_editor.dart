@@ -25,27 +25,43 @@ import '../theme/app_theme.dart';
 /// Ingredients screen (Step 3) stays the one place that happens (see
 /// plan doc's Admin UI section).
 ///
-/// Simplification vs. the full plan doc: every row applies to the base
-/// product regardless of size (variant_id always null here). Per-size
-/// recipe overrides (e.g. "Large" using more milk than "Medium") are
-/// a real feature the schema already supports, just not exposed in
-/// this first pass of the UI — flagging this as a known gap rather
-/// than a decision, in case per-size recipes turn out to matter soon.
+/// Each ingredient row can optionally be scoped to one size instead of
+/// applying to every size — see [sizes]. Checkout deduction (Step 5)
+/// already prefers a variant-specific row over the base row when both
+/// exist for a sold size, so no backend changes were needed here.
 class RecipeEditor extends StatefulWidget {
   final String? productId;
-  final ValueChanged<List<({String ingredientId, double quantityUsed})>>? onDraftRecipeItemsChanged;
+  final ValueChanged<List<({String ingredientId, double quantityUsed, String? variantKey})>>? onDraftRecipeItemsChanged;
+
+  /// The product's current sizes, for the per-row "Applies to" picker.
+  /// Empty when the product has no sizes — in that case every row
+  /// implicitly applies to the whole product, same as before this
+  /// feature existed, and the picker doesn't show at all.
+  ///
+  /// `key` is either a real variant id (editing an existing product,
+  /// whose sizes already have ids) or a positional placeholder like
+  /// `idx:0` (a brand-new product whose sizes are still staged
+  /// locally in ProductVariantEditor and don't have ids yet) — the
+  /// caller (AddProductDialog) resolves which one to pass in. For the
+  /// idx: case, the placeholder is only resolved to a real variant id
+  /// after both the product and its sizes are saved (see
+  /// register_screen.dart's onSubmit).
+  final List<({String key, String name})> sizes;
 
   /// Optional — when passed, a live "Cost: ₱X · Margin Y%" line is
   /// shown under the recipe rows, recomputed as ingredients/quantities
   /// change and as this controller's text changes. Owned by the
   /// caller (AddProductDialog's own price field controller); this
-  /// widget only reads it, never disposes it.
+  /// widget only reads it, never disposes it. Sums every visible row
+  /// regardless of which size it's scoped to — a rough total cost, not
+  /// resolved per-size the way checkout deduction is.
   final TextEditingController? priceController;
 
   const RecipeEditor({
     super.key,
     required this.productId,
     this.onDraftRecipeItemsChanged,
+    this.sizes = const [],
     this.priceController,
   });
 
@@ -62,10 +78,13 @@ class _CostResult {
 class _DraftRow {
   final ProductRecipeItem? existing; // null = not yet saved to Supabase
   String? ingredientId;
+  String? variantKey; // null = "All sizes"; else a real variant id (editing)
+                       // or an "idx:n" placeholder (new product, see
+                       // RecipeEditor.sizes doc)
   final TextEditingController qtyCtrl;
   final FocusNode qtyFocus = FocusNode();
 
-  _DraftRow({this.existing, this.ingredientId, required String qty})
+  _DraftRow({this.existing, this.ingredientId, this.variantKey, required String qty})
       : qtyCtrl = TextEditingController(text: qty);
 
   void dispose() {
@@ -104,7 +123,7 @@ class _RecipeEditorState extends State<RecipeEditor> {
         setState(() {
           _hasRecipe = provider.items.isNotEmpty;
           for (final item in provider.items) {
-            _rows.add(_newRow(existing: item, ingredientId: item.ingredientId, qty: _formatQty(item.quantityUsed)));
+            _rows.add(_newRow(existing: item, ingredientId: item.ingredientId, variantKey: item.variantId, qty: _formatQty(item.quantityUsed)));
           }
           _loadedExisting = true;
         });
@@ -146,6 +165,7 @@ class _RecipeEditorState extends State<RecipeEditor> {
         .map((r) => (
               ingredientId: r.ingredientId!,
               quantityUsed: double.tryParse(r.qtyCtrl.text.trim()) ?? 0,
+              variantKey: r.variantKey,
             ))
         .where((r) => r.quantityUsed > 0)
         .toList());
@@ -166,8 +186,8 @@ class _RecipeEditorState extends State<RecipeEditor> {
     });
   }
 
-  _DraftRow _newRow({ProductRecipeItem? existing, String? ingredientId, required String qty}) {
-    final row = _DraftRow(existing: existing, ingredientId: ingredientId, qty: qty);
+  _DraftRow _newRow({ProductRecipeItem? existing, String? ingredientId, String? variantKey, required String qty}) {
+    final row = _DraftRow(existing: existing, ingredientId: ingredientId, variantKey: variantKey, qty: qty);
     _wireRow(row);
     return row;
   }
@@ -205,6 +225,11 @@ class _RecipeEditorState extends State<RecipeEditor> {
     await _commitRow(index);
   }
 
+  Future<void> _onVariantChanged(int index, String? variantKey) async {
+    setState(() => _rows[index].variantKey = variantKey);
+    await _commitRow(index);
+  }
+
   Future<void> _commitRow(int index) async {
     final row = _rows[index];
     final ingredientId = row.ingredientId;
@@ -221,16 +246,17 @@ class _RecipeEditorState extends State<RecipeEditor> {
       if (row.existing == null) {
         final saved = await provider.addItem(
           productId: widget.productId!,
+          variantId: row.variantKey,
           ingredientId: ingredientId,
           quantityUsed: qty,
         );
         if (mounted) {
           setState(() {
-            _rows[index] = _newRow(existing: saved, ingredientId: ingredientId, qty: _formatQty(qty));
+            _rows[index] = _newRow(existing: saved, ingredientId: ingredientId, variantKey: row.variantKey, qty: _formatQty(qty));
           });
         }
       } else {
-        await provider.updateItem(row.existing!.id, ingredientId: ingredientId, quantityUsed: qty);
+        await provider.updateItem(row.existing!.id, ingredientId: ingredientId, quantityUsed: qty, variantId: row.variantKey);
       }
     } catch (e) {
       if (mounted) {
@@ -450,43 +476,75 @@ class _RecipeEditorState extends State<RecipeEditor> {
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: DropdownButtonFormField<String>(
-                        value: row.ingredientId != null && byId.containsKey(row.ingredientId) ? row.ingredientId : null,
-                        dropdownColor: AppColors.slate,
-                        style: AppTextStyles.body(size: 13),
-                        decoration: const InputDecoration(hintText: 'Pick one'),
-                        isExpanded: true,
-                        items: ingredients
-                            .map((i) => DropdownMenuItem(value: i.id, child: Text(i.name, overflow: TextOverflow.ellipsis)))
-                            .toList(),
-                        onChanged: (value) => _onIngredientChanged(index, value),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: row.qtyCtrl,
-                        focusNode: row.qtyFocus,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        style: AppTextStyles.mono(size: 14, weight: FontWeight.w600, color: AppColors.ledAmber),
-                        decoration: InputDecoration(
-                          hintText: '0',
-                          suffixText: selected?.unitDisplay,
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: DropdownButtonFormField<String>(
+                            value: row.ingredientId != null && byId.containsKey(row.ingredientId) ? row.ingredientId : null,
+                            dropdownColor: AppColors.slate,
+                            style: AppTextStyles.body(size: 13),
+                            decoration: const InputDecoration(hintText: 'Pick one'),
+                            isExpanded: true,
+                            items: ingredients
+                                .map((i) => DropdownMenuItem(value: i.id, child: Text(i.name, overflow: TextOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (value) => _onIngredientChanged(index, value),
+                          ),
                         ),
-                        onSubmitted: (_) => _commitRow(index),
-                        onEditingComplete: () => _commitRow(index),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: row.qtyCtrl,
+                            focusNode: row.qtyFocus,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: AppTextStyles.mono(size: 14, weight: FontWeight.w600, color: AppColors.ledAmber),
+                            decoration: InputDecoration(
+                              hintText: '0',
+                              suffixText: selected?.unitDisplay,
+                            ),
+                            onSubmitted: (_) => _commitRow(index),
+                            onEditingComplete: () => _commitRow(index),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: AppColors.ledgerRed, size: 20),
+                          onPressed: () => _removeRow(index),
+                          tooltip: 'Remove',
+                        ),
+                      ],
+                    ),
+                    if (widget.sizes.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text('Applies to  ', style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted)),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String?>(
+                                value: row.variantKey,
+                                dropdownColor: AppColors.slate,
+                                isDense: true,
+                                isExpanded: true,
+                                style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+                                items: [
+                                  const DropdownMenuItem<String?>(value: null, child: Text('All sizes')),
+                                  ...widget.sizes.map((s) => DropdownMenuItem<String?>(
+                                        value: s.key,
+                                        child: Text(s.name, overflow: TextOverflow.ellipsis),
+                                      )),
+                                ],
+                                onChanged: (value) => _onVariantChanged(index, value),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, color: AppColors.ledgerRed, size: 20),
-                      onPressed: () => _removeRow(index),
-                      tooltip: 'Remove',
-                    ),
+                    ],
                   ],
                 ),
               );

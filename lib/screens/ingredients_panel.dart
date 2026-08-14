@@ -301,6 +301,16 @@ class _IngredientRow extends StatelessWidget {
                       ],
                     ],
                   ),
+                  const SizedBox(height: 2),
+                  Text(
+                    ingredient.costPerUnit != null
+                        ? '₱${_trimZeros(ingredient.costPerUnit!)} / ${ingredient.unitDisplay}'
+                        : 'Cost not set',
+                    style: AppTextStyles.body(
+                      size: 11.5,
+                      color: ingredient.costPerUnit != null ? AppColors.textMuted : AppColors.ledgerRed,
+                    ),
+                  ),
                 ],
               ),
             ),

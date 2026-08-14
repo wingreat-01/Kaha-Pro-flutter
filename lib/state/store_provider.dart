@@ -30,6 +30,11 @@ class StoreProvider extends ChangeNotifier {
   /// label instead of null-checking everywhere.
   String get businessTypeLabel => _store?.businessTypeLabel ?? 'Raw Materials';
 
+  /// False until the store has loaded -- defaults open, not locked,
+  /// so a slow/failed load never accidentally banner-locks a real
+  /// active store. Only true once we've actually confirmed plan == 'expired'.
+  bool get isExpired => _store?.isExpired ?? false;
+
   Future<void> loadFromSupabase() async {
     isLoading = true;
     loadError = null;
@@ -38,7 +43,7 @@ class StoreProvider extends ChangeNotifier {
     try {
       final row = await _client
           .from('stores')
-          .select('id, name, business_type')
+          .select('id, name, business_type, plan')
           .single();
       _store = Store.fromRow(row);
       isLoading = false;

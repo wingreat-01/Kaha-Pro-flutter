@@ -91,23 +91,33 @@ class RecipeProvider extends ChangeNotifier {
     return item;
   }
 
-  /// Changing the ingredient a row points to and changing its quantity
-  /// are both just column updates here -- unlike a variant's name,
-  /// there's no "this is really a rename, not a new thing" ambiguity,
-  /// so both fields go through the same update.
+  /// Sentinel for updateItem's variantId param — lets the caller
+  /// distinguish "don't touch variant_id" (the default, omit the
+  /// param) from "explicitly set variant_id to null" (pass
+  /// variantId: null to move a row back to applying to all sizes).
+  /// A plain nullable param can't express that difference on its own.
+  static const Object _unsetVariantId = Object();
+
+  /// Changing the ingredient a row points to, its quantity, and which
+  /// size it applies to are all just column updates here -- unlike a
+  /// variant's name, there's no "this is really a rename, not a new
+  /// thing" ambiguity, so all three go through the same update.
   Future<void> updateItem(
     String id, {
     String? ingredientId,
     double? quantityUsed,
+    Object? variantId = _unsetVariantId,
   }) async {
     final index = _items.indexWhere((i) => i.id == id);
     if (index < 0) return;
     final previous = _items[index];
+    final variantChanged = !identical(variantId, _unsetVariantId);
+    final newVariantId = variantChanged ? variantId as String? : previous.variantId;
 
     _items[index] = ProductRecipeItem(
       id: previous.id,
       productId: previous.productId,
-      variantId: previous.variantId,
+      variantId: newVariantId,
       ingredientId: ingredientId ?? previous.ingredientId,
       quantityUsed: quantityUsed ?? previous.quantityUsed,
     );
@@ -117,6 +127,7 @@ class RecipeProvider extends ChangeNotifier {
       await _client.from('product_recipe_items').update({
         if (ingredientId != null) 'ingredient_id': ingredientId,
         if (quantityUsed != null) 'quantity_used': quantityUsed,
+        if (variantChanged) 'variant_id': newVariantId,
       }).eq('id', id);
     } catch (e) {
       _items[index] = previous;

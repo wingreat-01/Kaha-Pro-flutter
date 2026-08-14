@@ -29,7 +29,7 @@ class AddProductDialog extends StatefulWidget {
     String unit,
     String? unitLabel,
     List<({String name, double price})> variants,
-    List<({String ingredientId, double quantityUsed})> recipeItems,
+    List<({String ingredientId, double quantityUsed, String? variantKey})> recipeItems,
   }) onSubmit;
 
   /// This store's total-product cap for its plan (ProductProvider.
@@ -79,7 +79,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   String _unit = 'pc';
   final _unitLabelCtrl = TextEditingController();
   List<({String name, double price})> _draftVariants = [];
-  List<({String ingredientId, double quantityUsed})> _draftRecipeItems = [];
+  List<({String ingredientId, double quantityUsed, String? variantKey})> _draftRecipeItems = [];
 
   // Deduped, order-preserving copy of widget.existingCategories.
   // DropdownButtonFormField throws an assertion if its `value` isn't
@@ -383,7 +383,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 initialVariants: widget.editingProduct?.variants ?? const [],
                 onDraftVariantsChanged: _isEditing
                     ? null
-                    : (drafts) => _draftVariants = drafts,
+                    // setState here (not just assignment) so the size
+                    // picker inside RecipeEditor below re-renders with
+                    // the current draft sizes as they're added/removed
+                    // — a size added just now should be immediately
+                    // selectable in "Applies to", not only after some
+                    // unrelated rebuild.
+                    : (drafts) => setState(() => _draftVariants = drafts),
               ),
               const SizedBox(height: 14),
               RecipeEditor(
@@ -391,6 +397,21 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 onDraftRecipeItemsChanged: _isEditing
                     ? null
                     : (drafts) => _draftRecipeItems = drafts,
+                // Editing: sizes already have real ids. New product:
+                // sizes are still staged locally with no id yet, so
+                // each gets an "idx:n" placeholder keyed to its
+                // position — register_screen.dart resolves these to
+                // real variant ids right after saving the sizes
+                // themselves.
+                sizes: _isEditing
+                    ? widget.editingProduct!.variants
+                        .map((v) => (key: v.id, name: v.name))
+                        .toList()
+                    : _draftVariants
+                        .asMap()
+                        .entries
+                        .map((e) => (key: 'idx:${e.key}', name: e.value.name))
+                        .toList(),
                 priceController: _priceCtrl,
               ),
               const SizedBox(height: 20),

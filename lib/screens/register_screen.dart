@@ -123,20 +123,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
             // failed size doesn't risk an interleaved partial write;
             // at this volume (a handful of sizes per product) the
             // sequential round trips are unnoticeable.
+            //
+            // Real ids are captured in save order so recipe rows
+            // scoped to a specific size (see below) can be resolved
+            // to the right one — ASSUMES ProductProvider.addVariant
+            // returns the new variant's id; if it currently returns
+            // void, that's a small follow-on change needed there. A
+            // failed size gets an empty-string placeholder so the
+            // index alignment with `variants` doesn't shift.
+            final savedVariantIds = <String>[];
             for (final v in variants) {
               try {
-                await catalog.addVariant(newId, name: v.name, price: v.price);
+                final variantId = await catalog.addVariant(newId, name: v.name, price: v.price);
+                savedVariantIds.add(variantId);
               } catch (e) {
+                savedVariantIds.add('');
                 debugPrint('Could not add size "${v.name}" to new product $newId: $e');
               }
             }
             // Same staged-then-attach pattern for recipe rows — the
             // recipe editor couldn't write to product_recipe_items
             // without a product_id either, so its drafts land here too.
+            // A row scoped to a specific size carries an "idx:n"
+            // placeholder (see RecipeEditor.sizes doc) instead of a
+            // real variant id, since the size didn't have one yet at
+            // draft time — resolve it against savedVariantIds now.
             for (final r in recipeItems) {
+              String? resolvedVariantId;
+              final key = r.variantKey;
+              if (key != null) {
+                if (key.startsWith('idx:')) {
+                  final idx = int.tryParse(key.substring(4));
+                  final resolved = idx != null && idx >= 0 && idx < savedVariantIds.length
+                      ? savedVariantIds[idx]
+                      : '';
+                  if (resolved.isEmpty) {
+                    debugPrint('Skipping recipe item for new product $newId — its size failed to save');
+                    continue;
+                  }
+                  resolvedVariantId = resolved;
+                } else {
+                  // Shouldn't normally happen for a new product (sizes
+                  // never have real ids yet at draft time), but harmless
+                  // to pass through rather than drop the row.
+                  resolvedVariantId = key;
+                }
+              }
               try {
                 await recipes.addItem(
                   productId: newId,
+                  variantId: resolvedVariantId,
                   ingredientId: r.ingredientId,
                   quantityUsed: r.quantityUsed,
                 );

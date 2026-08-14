@@ -132,6 +132,14 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     });
   }
 
+  void _openForgotPasswordDialog() {
+    final resetEmailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    showDialog(
+      context: context,
+      builder: (dialogContext) => _ForgotPasswordDialog(initialEmailCtrl: resetEmailCtrl),
+    );
+  }
+
   @override
   void dispose() {
     _storeNameCtrl.dispose();
@@ -234,6 +242,16 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                       style: AppTextStyles.body(size: 13, color: AppColors.textMuted),
                     ),
                   ),
+                  if (_isSignIn) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: _loading ? null : _openForgotPasswordDialog,
+                      child: Text(
+                        'Forgot password?',
+                        style: AppTextStyles.body(size: 12.5, color: AppColors.textMuted),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -316,6 +334,142 @@ class _Chip extends StatelessWidget {
             size: 12,
             color: selected ? AppColors.ledAmber : AppColors.textMuted,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Email-entry dialog that requests a Supabase password-reset link.
+/// Deliberately doesn't try to distinguish "no account with that
+/// email" from "email sent" in its success message -- doing so would
+/// let someone probe which emails have accounts, same reasoning as
+/// LoginScreen's merged "Invalid name or PIN" message.
+///
+/// IMPORTANT: resetPasswordForEmail's redirectTo must point at a deep
+/// link this app actually handles, or the reset link in the email
+/// will open in a browser with nowhere useful to land. If deep
+/// linking isn't set up yet, leave redirectTo unset for now -- the
+/// user can still complete the reset via Supabase's default hosted
+/// page, they just won't be dropped back into the app automatically.
+class _ForgotPasswordDialog extends StatefulWidget {
+  final TextEditingController initialEmailCtrl;
+  const _ForgotPasswordDialog({required this.initialEmailCtrl});
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  bool _loading = false;
+  String? _error;
+  bool _sent = false;
+
+  Future<void> _send() async {
+    final email = widget.initialEmailCtrl.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Enter your email.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email,
+        // redirectTo: 'io.supabase.kahapro://reset-callback/',
+        // ^ set this once a deep link route exists to catch the
+        // callback; until then the hosted Supabase page still works.
+      );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _sent = true;
+      });
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Something went wrong. Please try again.';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.slate,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'RESET PASSWORD',
+              style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.5),
+            ),
+            const SizedBox(height: 16),
+            if (_sent) ...[
+              Text(
+                'If an account exists for that email, a reset link is on its way. Check your inbox.',
+                style: AppTextStyles.body(size: 13, color: AppColors.tillGreen),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('Done', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber)),
+                ),
+              ),
+            ] else ...[
+              Text(
+                'Email',
+                style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: widget.initialEmailCtrl,
+                autofocus: true,
+                style: AppTextStyles.body(size: 14),
+                decoration: const InputDecoration(hintText: 'you@email.com'),
+                onSubmitted: (_) => _send(),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: AppTextStyles.body(size: 12.5, color: AppColors.ledgerRed)),
+              ],
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                    child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _loading ? null : _send,
+                    child: _loading
+                        ? const SizedBox(
+                            height: 16, width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF3A2600)),
+                          )
+                        : const Text('Send reset link'),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );

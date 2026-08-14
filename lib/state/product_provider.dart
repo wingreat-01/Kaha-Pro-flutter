@@ -501,15 +501,23 @@ class ProductProvider extends ChangeNotifier {
   /// [deleteVariant] key off that id. Toggling "this product has
   /// sizes" on in the admin UI is just calling this once; the product
   /// itself needs no separate flag (see [Product.hasVariants]).
-  Future<void> addVariant(
+  ///
+  /// Returns the new variant's real id — register_screen.dart needs
+  /// this immediately after a brand-new product's sizes save, to
+  /// resolve any recipe rows staged against a particular size (see
+  /// RecipeEditor.sizes doc) to their real variant_id. Returns '' on
+  /// the two early-return paths below (product not found locally /
+  /// blank name) — same empty-string "this one failed" convention
+  /// register_screen.dart's savedVariantIds list already expects.
+  Future<String> addVariant(
     String productId, {
     required String name,
     required double price,
   }) async {
     final index = _products.indexWhere((p) => p.id == productId);
-    if (index < 0) return;
+    if (index < 0) return '';
     final trimmedName = name.trim();
-    if (trimmedName.isEmpty) return;
+    if (trimmedName.isEmpty) return '';
 
     final currentVariants = _products[index].variants;
     final nextSortOrder = currentVariants.isEmpty
@@ -532,6 +540,7 @@ class ProductProvider extends ChangeNotifier {
       variants: [...currentVariants, variant],
     );
     notifyListeners();
+    return variant.id;
   }
 
   /// Renames and/or repriced an existing size. Optimistic — the size
