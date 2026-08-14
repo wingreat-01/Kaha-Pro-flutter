@@ -35,14 +35,28 @@ class RecipeEditor extends StatefulWidget {
   final String? productId;
   final ValueChanged<List<({String ingredientId, double quantityUsed})>>? onDraftRecipeItemsChanged;
 
+  /// Optional — when passed, a live "Cost: ₱X · Margin Y%" line is
+  /// shown under the recipe rows, recomputed as ingredients/quantities
+  /// change and as this controller's text changes. Owned by the
+  /// caller (AddProductDialog's own price field controller); this
+  /// widget only reads it, never disposes it.
+  final TextEditingController? priceController;
+
   const RecipeEditor({
     super.key,
     required this.productId,
     this.onDraftRecipeItemsChanged,
+    this.priceController,
   });
 
   @override
   State<RecipeEditor> createState() => _RecipeEditorState();
+}
+
+class _CostResult {
+  final double total;
+  final bool incomplete;
+  const _CostResult({required this.total, required this.incomplete});
 }
 
 class _DraftRow {
@@ -65,11 +79,19 @@ class _RecipeEditorState extends State<RecipeEditor> {
   final List<_DraftRow> _rows = [];
   bool _loadedExisting = false;
 
+  // Target margin for the suggested-price row under the cost summary.
+  // Margin here means (price - cost) / price, matching the same
+  // definition used for the margin% shown next to cost above — not a
+  // markup-on-cost percentage, which would be a different number.
+  static const List<int> _marginOptions = [20, 30, 40, 50, 60];
+  int _targetMarginPct = 40;
+
   bool get _isEditing => widget.productId != null;
 
   @override
   void initState() {
     super.initState();
+    widget.priceController?.addListener(_onPriceChanged);
     if (_isEditing) {
       // Existing product: fetch this product's current recipe once the
       // frame is up, rather than in initState directly, since
@@ -90,8 +112,13 @@ class _RecipeEditorState extends State<RecipeEditor> {
     }
   }
 
+  void _onPriceChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    widget.priceController?.removeListener(_onPriceChanged);
     for (final row in _rows) {
       row.dispose();
     }
@@ -134,6 +161,9 @@ class _RecipeEditorState extends State<RecipeEditor> {
     }
 
     row.qtyFocus.addListener(() => maybeCommit(row.qtyFocus));
+    row.qtyCtrl.addListener(() {
+      if (mounted) setState(() {}); // live cost/margin recompute while typing
+    });
   }
 
   _DraftRow _newRow({ProductRecipeItem? existing, String? ingredientId, required String qty}) {
@@ -213,6 +243,131 @@ class _RecipeEditorState extends State<RecipeEditor> {
         );
       }
     }
+  }
+
+  /// Sums (quantity_used × cost_per_unit) across every row that has
+  /// both an ingredient picked and a valid quantity. `incomplete` is
+  /// true if any such row's ingredient has no cost_per_unit set — in
+  /// that case `total` is still the sum of what IS known, but the
+  /// summary shows it as incomplete rather than a number that would
+  /// silently understate true cost. Returns null when there's nothing
+  /// to show yet (no valid rows).
+  _CostResult? _computeCost(Map<String, Ingredient> byId) {
+    double total = 0;
+    var incomplete = false;
+    var any = false;
+    for (final row in _rows) {
+      final id = row.ingredientId;
+      if (id == null) continue;
+      final ingredient = byId[id];
+      if (ingredient == null) continue;
+      final qty = double.tryParse(row.qtyCtrl.text.trim());
+      if (qty == null || qty <= 0) continue;
+      any = true;
+      if (ingredient.costPerUnit == null) {
+        incomplete = true;
+      } else {
+        total += ingredient.costPerUnit! * qty;
+      }
+    }
+    if (!any) return null;
+    return _CostResult(total: total, incomplete: incomplete);
+  }
+
+  Widget _buildCostSummary(Map<String, Ingredient> byId) {
+    final result = _computeCost(byId);
+    if (result == null) return const SizedBox.shrink();
+
+    if (result.incomplete) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          "Cost: incomplete — set a cost per unit on all materials used to see margin",
+          style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
+        ),
+      );
+    }
+
+    final cost = result.total;
+    final priceText = widget.priceController?.text.trim();
+    final price = priceText != null ? double.tryParse(priceText) : null;
+
+    final Widget costLine;
+    if (price == null || price <= 0) {
+      costLine = Text(
+        'Cost: ₱${cost.toStringAsFixed(2)}',
+        style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary),
+      );
+    } else {
+      final profit = price - cost;
+      final marginPct = (profit / price) * 100;
+      final color = marginPct < 0
+          ? AppColors.ledgerRed
+          : marginPct < 20
+              ? AppColors.ledAmber
+              : AppColors.tillGreen;
+      costLine = Text(
+        'Cost: ₱${cost.toStringAsFixed(2)} · Margin ${marginPct.toStringAsFixed(0)}% (₱${profit.toStringAsFixed(2)})',
+        style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: color),
+      );
+    }
+
+    final suggestion = _buildSuggestedPriceRow(cost);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          costLine,
+          if (suggestion != null) ...[
+            const SizedBox(height: 6),
+            suggestion,
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// "Suggested price for 40% margin: ₱25.00 [Use]" — only shown when
+  /// there's somewhere to write the price to (priceController passed
+  /// in) and a real cost to base it on. Margin dropdown lets the
+  /// owner try a few targets without leaving the dialog; tapping "Use"
+  /// fills the actual price field, which (via the priceController
+  /// listener in initState) immediately updates the cost/margin line
+  /// above to match.
+  Widget? _buildSuggestedPriceRow(double cost) {
+    if (widget.priceController == null || cost <= 0) return null;
+    final suggested = cost / (1 - _targetMarginPct / 100);
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      children: [
+        Text('Suggested price for', style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted)),
+        DropdownButton<int>(
+          value: _targetMarginPct,
+          dropdownColor: AppColors.slate,
+          underline: const SizedBox.shrink(),
+          isDense: true,
+          style: AppTextStyles.body(size: 11.5, color: AppColors.textSecondary),
+          items: _marginOptions
+              .map((m) => DropdownMenuItem(value: m, child: Text('$m%')))
+              .toList(),
+          onChanged: (value) => setState(() => _targetMarginPct = value ?? _targetMarginPct),
+        ),
+        Text('margin: ₱${suggested.toStringAsFixed(2)}', style: AppTextStyles.mono(size: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+        TextButton(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () => widget.priceController!.text = suggested.toStringAsFixed(2),
+          child: Text('Use', style: AppTextStyles.body(size: 11.5, weight: FontWeight.w700, color: AppColors.tillGreen)),
+        ),
+      ],
+    );
   }
 
   @override
@@ -342,6 +497,7 @@ class _RecipeEditorState extends State<RecipeEditor> {
               icon: const Icon(Icons.add_circle_outline, color: AppColors.tillGreen, size: 18),
               label: Text('Add ${label.toLowerCase()} used', style: AppTextStyles.body(size: 12.5, weight: FontWeight.w600, color: AppColors.tillGreen)),
             ),
+          _buildCostSummary(byId),
         ],
       ],
     );

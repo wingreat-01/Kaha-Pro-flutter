@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/ingredient.dart';
+import '../models/product_recipe_item.dart';
 import '../models/sales_report.dart';
+import '../state/ingredient_provider.dart';
+import '../state/recipe_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Sales Reports screen — answers the owner's day-to-day questions:
@@ -28,15 +33,103 @@ class _ReportsScreenState extends State<ReportsScreen> {
   late SalesReport _report;
   _SortMode _sortMode = _SortMode.revenue;
 
+  // Cached store-wide recipe rows, fetched once (not fetch-once-on-
+  // login like Product/Ingredient providers, since this screen is the
+  // only place that needs it) — null until loaded, at which point
+  // every report gets re-built with cost/margin data attached. A
+  // fetch failure just means gross profit doesn't show this session;
+  // revenue/best-sellers still work fine without it.
+  Map<String, List<ProductRecipeItem>>? _recipesByProduct;
+
   @override
   void initState() {
     super.initState();
     _report = _build(_range);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCostData());
+  }
+
+  Future<void> _loadCostData() async {
+    if (!mounted) return;
+    try {
+      final recipes = await context.read<RecipeProvider>().loadAllGroupedByProduct();
+      if (!mounted) return;
+      setState(() {
+        _recipesByProduct = recipes;
+        _report = _build(_range); // re-run now that cost data is available
+      });
+    } catch (e) {
+      // Silent — cost/margin just won't show this session (see class doc above).
+    }
   }
 
   SalesReport _build(DateTimeRange range) {
     final builder = widget.reportBuilder ?? _mockReport;
-    return builder(range);
+    final base = builder(range);
+    final recipes = _recipesByProduct;
+    if (recipes == null) return base;
+    final ingredientsById = {
+      for (final i in context.read<IngredientProvider>().ingredients) i.id: i,
+    };
+    return _withCostData(base, recipes, ingredientsById);
+  }
+
+  /// Resolves each product's per-unit cost the same way
+  /// RecipeProvider._computeDeductions does at checkout time:
+  /// variant-specific recipe rows (if any exist for the sold variant)
+  /// replace the base rows rather than adding to them. Returns null —
+  /// not 0 — if the product has no recipe at all, or if any
+  /// applicable row's ingredient has no cost_per_unit set, so an
+  /// incomplete recipe never silently understates cost.
+  double? _unitCost(
+    String productId,
+    String? variantId,
+    Map<String, List<ProductRecipeItem>> recipesByProduct,
+    Map<String, Ingredient> ingredientsById,
+  ) {
+    final rows = recipesByProduct[productId];
+    if (rows == null || rows.isEmpty) return null;
+
+    final variantRows =
+        variantId == null ? const <ProductRecipeItem>[] : rows.where((r) => r.variantId == variantId).toList();
+    final applicable = variantRows.isNotEmpty ? variantRows : rows.where((r) => r.variantId == null).toList();
+    if (applicable.isEmpty) return null;
+
+    double total = 0;
+    for (final row in applicable) {
+      final ingredient = ingredientsById[row.ingredientId];
+      if (ingredient?.costPerUnit == null) return null;
+      total += row.quantityUsed * ingredient!.costPerUnit!;
+    }
+    return total;
+  }
+
+  SalesReport _withCostData(
+    SalesReport report,
+    Map<String, List<ProductRecipeItem>> recipesByProduct,
+    Map<String, Ingredient> ingredientsById,
+  ) {
+    final costedLines = report.productBreakdown.map((line) {
+      final unitCost = _unitCost(line.productId, line.variantId, recipesByProduct, ingredientsById);
+      return ProductSalesLine(
+        productId: line.productId,
+        variantId: line.variantId,
+        displayName: line.displayName,
+        quantitySold: line.quantitySold,
+        revenue: line.revenue,
+        cost: unitCost == null ? null : unitCost * line.quantitySold,
+      );
+    }).toList();
+
+    return SalesReport(
+      rangeStart: report.rangeStart,
+      rangeEnd: report.rangeEnd,
+      totalRevenue: report.totalRevenue,
+      cashIn: report.cashIn,
+      transactionCount: report.transactionCount,
+      itemsSold: report.itemsSold,
+      productBreakdown: costedLines,
+      cashierBreakdown: report.cashierBreakdown,
+    );
   }
 
   static DateTimeRange _rangeFor(DateRangePreset preset) {
@@ -273,6 +366,13 @@ class _SummaryGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Only show Gross Profit once at least one line has cost data —
+    // before the recipe fetch resolves, or in a store with no recipes
+    // set up at all, every line's cost is null and showing "₱0.00"
+    // would read as "you make no profit," which is wrong, not just
+    // incomplete. Silence is more honest than a misleading zero here.
+    final showGrossProfit = report.productBreakdown.any((p) => p.cost != null);
+
     return GridView.count(
       // Fixed crossAxisCount:2 + a fixed aspect ratio meant each card
       // was as wide as half the *whole browser window* on desktop —
@@ -307,6 +407,15 @@ class _SummaryGrid extends StatelessWidget {
           value: '${report.itemsSold}',
           valueColor: AppColors.textPrimary,
         ),
+        if (showGrossProfit)
+          _SummaryCard(
+            label: 'GROSS PROFIT',
+            value: '₱${report.grossProfit.toStringAsFixed(2)}',
+            valueColor: report.grossProfit < 0 ? AppColors.ledgerRed : AppColors.tillGreen,
+            subtitle: report.hasCompleteCostData
+                ? null
+                : '~${(report.costCoverage * 100).toStringAsFixed(0)}% of sales costed',
+          ),
       ],
     );
   }

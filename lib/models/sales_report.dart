@@ -8,13 +8,25 @@ class ProductSalesLine {
   final int quantitySold;
   final double revenue;
 
+  /// Total cost of goods for this line's quantitySold, based on the
+  /// product's recipe (ingredient quantities × cost_per_unit) at the
+  /// time the report was built — not a snapshot from the actual sale,
+  /// since transaction_line_items doesn't store one. Null means it
+  /// couldn't be computed: the product has no recipe at all, or at
+  /// least one ingredient in its recipe has no cost_per_unit set.
+  /// Never treated as ₱0 in that case — see SalesReport.grossProfit.
+  final double? cost;
+
   const ProductSalesLine({
     required this.productId,
     this.variantId,
     required this.displayName,
     required this.quantitySold,
     required this.revenue,
+    this.cost,
   });
+
+  double? get profit => cost == null ? null : revenue - cost!;
 }
 
 /// One row in the cashier breakdown — every transaction in the range
@@ -59,6 +71,35 @@ class SalesReport {
   });
 
   double get avgTransactionValue => transactionCount == 0 ? 0 : totalRevenue / transactionCount;
+
+  /// Sum of every line's known cost — lines with cost == null (no
+  /// recipe, or an ingredient missing a cost) contribute nothing here
+  /// rather than being treated as ₱0, so this never understates cost.
+  double get totalCost =>
+      productBreakdown.fold(0.0, (sum, p) => sum + (p.cost ?? 0));
+
+  /// Revenue minus known cost. Only as complete as [costCoverage]
+  /// says it is — see that getter before treating this as exact.
+  double get grossProfit => totalRevenue - totalCost;
+
+  /// Fraction of *revenue* (not line count) backed by known cost
+  /// data. Weighted by revenue rather than by number of products,
+  /// since one high-revenue item with no recipe skews the true
+  /// number far more than several small uncosted ones — a raw
+  /// "3 of 10 products costed" count would be misleading here.
+  /// 1.0 when there's no revenue at all (nothing to be incomplete about).
+  double get costCoverage {
+    if (totalRevenue == 0) return 1;
+    final coveredRevenue = productBreakdown
+        .where((p) => p.cost != null)
+        .fold(0.0, (sum, p) => sum + p.revenue);
+    return coveredRevenue / totalRevenue;
+  }
+
+  /// True only when every product in the breakdown has known cost —
+  /// i.e. grossProfit reflects every sale, not just some of them.
+  bool get hasCompleteCostData =>
+      productBreakdown.isNotEmpty && productBreakdown.every((p) => p.cost != null);
 
   factory SalesReport.empty(DateTime start, DateTime end) => SalesReport(
         rangeStart: start,

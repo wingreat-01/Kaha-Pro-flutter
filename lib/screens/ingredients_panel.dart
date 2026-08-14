@@ -55,6 +55,7 @@ class IngredientsPanel extends StatelessWidget {
             : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _ValuationSummary(ingredients: sorted),
                   for (final ingredient in sorted)
                     _IngredientRow(
                       ingredient: ingredient,
@@ -75,6 +76,65 @@ class IngredientsPanel extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => _EditIngredientDialog(label: label, editing: editing),
+    );
+  }
+}
+
+/// Total ₱ value of stock currently on hand — sum of (stock_quantity ×
+/// cost_per_unit) across every ingredient that has a cost set. Items
+/// with no cost_per_unit are excluded from the total rather than
+/// silently treated as ₱0, since that would understate the real
+/// value; instead their count is called out underneath so it's clear
+/// the number is a floor, not the whole picture. Hidden entirely if
+/// nothing has a cost set yet — a ₱0.00 card would just be noise.
+class _ValuationSummary extends StatelessWidget {
+  final List<Ingredient> ingredients;
+  const _ValuationSummary({required this.ingredients});
+
+  @override
+  Widget build(BuildContext context) {
+    double total = 0;
+    var costed = 0;
+    var missing = 0;
+    for (final i in ingredients) {
+      if (i.costPerUnit != null) {
+        total += i.costPerUnit! * i.stockQuantity;
+        costed++;
+      } else {
+        missing++;
+      }
+    }
+    if (costed == 0) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.slate,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.slateBorder, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'STOCK VALUE',
+            style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '₱${total.toStringAsFixed(2)}',
+            style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
+          ),
+          if (missing > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '$missing item${missing == 1 ? '' : 's'} missing cost per unit — not included',
+              style: AppTextStyles.body(size: 11, color: AppColors.textMuted),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

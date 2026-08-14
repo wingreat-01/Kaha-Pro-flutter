@@ -23,6 +23,23 @@ class RecipeProvider extends ChangeNotifier {
 
   List<ProductRecipeItem> get items => List.unmodifiable(_items);
 
+  /// Fetches every recipe row for the *whole store* in one query,
+  /// grouped by product_id — this is the "store-wide ingredient-usage
+  /// report" use case flagged as not-yet-needed in the class doc
+  /// above; Reports' gross-profit calculation is that use case.
+  /// Deliberately doesn't touch [_items]/[isLoading]/[clear] — those
+  /// stay scoped to whichever single product's recipe editor might
+  /// currently be open in a dialog, entirely independent of this.
+  Future<Map<String, List<ProductRecipeItem>>> loadAllGroupedByProduct() async {
+    final rows = await _client.from('product_recipe_items').select();
+    final grouped = <String, List<ProductRecipeItem>>{};
+    for (final row in rows as List) {
+      final item = ProductRecipeItem.fromRow(row as Map<String, dynamic>);
+      grouped.putIfAbsent(item.productId, () => []).add(item);
+    }
+    return grouped;
+  }
+
   Future<void> loadForProduct(String productId) async {
     isLoading = true;
     loadError = null;

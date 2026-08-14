@@ -391,6 +391,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 onDraftRecipeItemsChanged: _isEditing
                     ? null
                     : (drafts) => _draftRecipeItems = drafts,
+                priceController: _priceCtrl,
               ),
               const SizedBox(height: 20),
               Row(

@@ -142,7 +142,7 @@ class ProductProvider extends ChangeNotifier {
       final categoryRows = await _client
           .from('categories')
           .select('id, name, is_protected')
-          .order('created_at');
+          .order('created_at', ascending: true);
 
       _categoryNames.clear();
       _categoryIds.clear();
@@ -155,7 +155,7 @@ class ProductProvider extends ChangeNotifier {
       final productRows = await _client
           .from('products')
           .select('*, categories(name), product_variants(*)')
-          .order('created_at');
+          .order('created_at', ascending: true);
 
       _products = (productRows as List)
           .map((row) => _productFromRow(row as Map<String, dynamic>))
