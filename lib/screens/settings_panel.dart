@@ -8,6 +8,7 @@ import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'categories_panel.dart';
 import '../widgets/bounded_content.dart';
+import '../models/store.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -23,7 +24,9 @@ class SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = context.watch<StoreProvider>().businessTypeLabel;
+    final storeProvider = context.watch<StoreProvider>();
+    final label = storeProvider.businessTypeLabel;
+    final store = storeProvider.store;
     final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
 
     return BoundedContent(
@@ -68,6 +71,14 @@ class SettingsPanel extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         const _SettingsSectionLabel('APP'),
+        _SettingsRow(
+          icon: Icons.workspace_premium_outlined,
+          label: 'Plan',
+          subtitle: _planSubtitle(store),
+          isWarning: store?.isExpired ?? false,
+          // No billing/upgrade screen yet (Phase 5) -- row is
+          // read-only for now, same as Store details/About below.
+        ),
         const _SettingsRow(
           icon: Icons.storefront_outlined,
           label: 'Store details',
@@ -81,6 +92,29 @@ class SettingsPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Subtitle copy for the Plan row. Free-tier stores show a trial
+/// countdown (or "expired") since that's the state most likely to
+/// change/matter; paid plans just show the plan name, since they
+/// don't carry a plan_expires_at date (see Store.isExpired).
+String _planSubtitle(Store? store) {
+  if (store == null) return '';
+  switch (store.plan) {
+    case 'basic':
+      return 'Basic plan';
+    case 'pro':
+      return 'Pro plan';
+    case 'expired':
+      return 'Trial expired · upgrade to continue';
+    default: // 'free'
+      if (store.isExpired) return 'Trial expired · upgrade to continue';
+      final days = store.trialDaysRemaining;
+      if (days != null) {
+        return 'Free trial · $days day${days == 1 ? '' : 's'} left';
+      }
+      return 'Free plan';
   }
 }
 
@@ -106,6 +140,10 @@ class _SettingsRow extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onTap;
   final int badgeCount;
+  // Colors the subtitle red like a badgeCount would, without showing
+  // a numeric badge -- for states like "Trial expired" where there's
+  // no count to display.
+  final bool isWarning;
 
   const _SettingsRow({
     required this.icon,
@@ -113,6 +151,7 @@ class _SettingsRow extends StatelessWidget {
     required this.subtitle,
     this.onTap,
     this.badgeCount = 0,
+    this.isWarning = false,
   });
 
   @override
@@ -156,7 +195,7 @@ class _SettingsRow extends StatelessWidget {
                         // Same red used for the LOW badge in Inventory/
                         // Ingredients rows — this subtitle is standing
                         // in for that same signal one level up the nav.
-                        color: badgeCount > 0 ? AppColors.ledgerRed : AppColors.textSecondary,
+                        color: (badgeCount > 0 || isWarning) ? AppColors.ledgerRed : AppColors.textSecondary,
                       ),
                     ),
                   ],
