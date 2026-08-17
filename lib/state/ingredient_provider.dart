@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/ingredient.dart';
+import '../models/ingredient_stock_movement.dart';
 
 /// Raw-materials/supplies state, backed by the ingredients table
 /// (see 004_create_ingredients.sql). Entirely separate from
@@ -157,6 +158,65 @@ class IngredientProvider extends ChangeNotifier {
     final index = _ingredients.indexWhere((i) => i.id == id);
     if (index < 0) return;
     return _writeStock(id, index, quantity < 0 ? 0 : quantity);
+  }
+
+  /// Manual owner correction WITH an audit trail -- used by the
+  /// Ingredients screen's stock dialog instead of plain setStock() so
+  /// every manual change has a reason attached (see
+  /// 007_create_ingredient_stock_movements.sql). [delta] is signed:
+  /// positive adds stock, negative deducts. Clamps at zero, same as
+  /// adjustStock/setStock -- this is still a manual correction, not a
+  /// sale.
+  ///
+  /// The stock write happens first and is what actually matters for
+  /// the app to keep working; the movement-log insert is
+  /// best-effort -- a failed log write shouldn't undo a real stock
+  /// change the same way a failed deductStockForSale write wouldn't
+  /// roll back an already-synced sale. It just means this one change
+  /// won't show up in history.
+  Future<void> recordManualAdjustment(
+    String id, {
+    required double delta,
+    required String reason,
+    String? note,
+    String? staffId,
+    String? staffName,
+  }) async {
+    final index = _ingredients.indexWhere((i) => i.id == id);
+    if (index < 0) return;
+    final current = _ingredients[index].stockQuantity;
+    final next = (current + delta) < 0 ? 0.0 : current + delta;
+    await _writeStock(id, index, next);
+
+    try {
+      await _client.from('ingredient_stock_movements').insert({
+        'ingredient_id': id,
+        'delta': delta,
+        'reason': reason,
+        'note': note,
+        'staff_id': staffId,
+        'staff_name': staffName,
+        'source': 'manual',
+      });
+    } catch (_) {
+      // Swallowed deliberately -- see doc comment above.
+    }
+  }
+
+  /// Recent movement history for one ingredient, newest first --
+  /// backs the History view in the Ingredients screen. Capped at 50;
+  /// this is a quick recent-activity check, not a full ledger export.
+  Future<List<IngredientStockMovement>> loadMovementsFor(String ingredientId) async {
+    final rows = await _client
+        .from('ingredient_stock_movements')
+        .select()
+        .eq('ingredient_id', ingredientId)
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    return (rows as List)
+        .map((r) => IngredientStockMovement.fromRow(r as Map<String, dynamic>))
+        .toList();
   }
 
   /// Checkout-time deduction — deliberately does NOT clamp at zero the

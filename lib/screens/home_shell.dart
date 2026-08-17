@@ -125,7 +125,9 @@ class _HomeShellState extends State<HomeShell> {
         // Defensive fallback — the gear icon that sets this is hidden
         // entirely for non-admins, so this only matters if _section
         // somehow ends up here some other way.
-        return _isAdmin ? const SettingsPanel() : RegisterScreen(cashierName: widget.user.name);
+        return _isAdmin
+            ? SettingsPanel(staffId: widget.user.id, staffName: widget.user.name)
+            : RegisterScreen(cashierName: widget.user.name);
     }
   }
 

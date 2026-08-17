@@ -20,7 +20,14 @@ import '../models/store.dart';
 /// Users panel, "Categories" opens the real Categories panel. Store
 /// details and About are still placeholders (Phase 5).
 class SettingsPanel extends StatelessWidget {
-  const SettingsPanel({super.key});
+  // Logged-in staff member — forwarded to IngredientsPanel so manual
+  // stock adjustments can be attributed (see ingredients_panel.dart's
+  // _StockAdjustDialog). Same info HomeShell already passes into
+  // RegisterScreen as cashierName.
+  final String staffId;
+  final String staffName;
+
+  const SettingsPanel({super.key, required this.staffId, required this.staffName});
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +73,7 @@ class SettingsPanel extends StatelessWidget {
               : 'Raw materials & supplies stock',
           badgeCount: lowStockCount,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const IngredientsPanel()),
+            MaterialPageRoute(builder: (_) => IngredientsPanel(staffId: staffId, staffName: staffName)),
           ),
         ),
         const SizedBox(height: 24),

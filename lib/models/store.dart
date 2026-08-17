@@ -55,17 +55,12 @@ class Store {
     return remaining < 0 ? 0 : remaining;
   }
 
-  /// The Step 0 label table: what the Inventory screen (and any
-  /// "+ Add ___" button / empty-state copy pulling from it) should
-  /// call raw-material items for this store's business type.
-  String get businessTypeLabel {
-    switch (businessType) {
-      case 'food_beverage':
-        return 'Ingredients';
-      case 'retail_hardware':
-        return 'Supplies';
-      default:
-        return 'Raw Materials';
-    }
-  }
+  /// The label used everywhere this section is referenced — the
+  /// Settings row, the panel's own title, and empty-state copy. Used
+  /// to differentiate by business_type (Ingredients/Supplies/Raw
+  /// Materials), but a single store commonly stocks both food
+  /// ingredients AND packaging supplies (cups, straws, thermal paper,
+  /// stickers, clamshells) side by side — so one broad label covers
+  /// all business types now instead of forking on business_type.
+  String get businessTypeLabel => 'Supplies & Materials';
 }

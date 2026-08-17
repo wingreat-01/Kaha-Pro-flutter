@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/ingredient.dart';
+import '../models/ingredient_stock_movement.dart';
 import '../state/ingredient_provider.dart';
 import '../state/store_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
+
+/// Reasons offered on a manual stock adjustment -- see
+/// _StockAdjustDialog. Deliberately a fixed short list rather than
+/// free text, so History stays scannable/filterable later rather than
+/// a pile of one-off phrasings.
+const List<String> kStockAdjustmentReasons = [
+  'Restock',
+  'Spoilage / Waste',
+  'Personal use',
+  'Stock count correction',
+  'Other',
+];
 
 /// Raw-materials/supplies admin screen — its own screen, same tier as
 /// Products/Categories/Settings, not a filtered view of Products (see
@@ -17,7 +30,13 @@ import '../widgets/bounded_content.dart';
 /// "Raw Materials", Step 0), so a hardware store sees "Supplies" here
 /// even though the class/file is still IngredientsPanel.
 class IngredientsPanel extends StatelessWidget {
-  const IngredientsPanel({super.key});
+  // Logged-in staff member, for attributing manual stock adjustments
+  // -- same info HomeShell already threads into RegisterScreen as
+  // cashierName, just carried one level further via SettingsPanel.
+  final String staffId;
+  final String staffName;
+
+  const IngredientsPanel({super.key, required this.staffId, required this.staffName});
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +55,19 @@ class IngredientsPanel extends StatelessWidget {
           style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, letterSpacing: 1),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.outbox_outlined),
+            tooltip: 'Withdraw stock',
+            onPressed: () => showDialog(
+              context: context,
+              builder: (_) => _WithdrawDialog(
+                ingredients: sorted,
+                provider: ingredients,
+                staffId: staffId,
+                staffName: staffName,
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add $label',
@@ -61,6 +93,8 @@ class IngredientsPanel extends StatelessWidget {
                       ingredient: ingredient,
                       provider: ingredients,
                       label: label,
+                      staffId: staffId,
+                      staffName: staffName,
                     ),
                 ],
               ),
@@ -76,6 +110,213 @@ class IngredientsPanel extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => _EditIngredientDialog(label: label, editing: editing),
+    );
+  }
+}
+
+/// Standalone withdrawal flow — search any ingredient by name, enter
+/// a quantity to take out, pick a reason (free text required when
+/// "Other" is picked), and it deducts immediately. This is the
+/// "withdraw something not tied to a sale" path the tap-to-adjust
+/// dialog on each row doesn't cover well, since that one requires
+/// scrolling to find the row and re-typing the *new total* rather
+/// than just "how much am I taking out". Writes through the same
+/// IngredientProvider.recordManualAdjustment used by the row dialog,
+/// so it lands in the same movement log.
+class _WithdrawDialog extends StatefulWidget {
+  final List<Ingredient> ingredients;
+  final IngredientProvider provider;
+  final String staffId;
+  final String staffName;
+
+  const _WithdrawDialog({
+    required this.ingredients,
+    required this.provider,
+    required this.staffId,
+    required this.staffName,
+  });
+
+  @override
+  State<_WithdrawDialog> createState() => _WithdrawDialogState();
+}
+
+class _WithdrawDialogState extends State<_WithdrawDialog> {
+  Ingredient? _selected;
+  final _qtyCtrl = TextEditingController();
+  final _otherReasonCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+  String? _reason;
+  String? _error;
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    _otherReasonCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_selected == null) {
+      setState(() => _error = 'Search and select an ingredient.');
+      return;
+    }
+    final qty = double.tryParse(_qtyCtrl.text.trim());
+    if (qty == null || qty <= 0) {
+      setState(() => _error = 'Enter a quantity greater than 0.');
+      return;
+    }
+    if (qty > _selected!.stockQuantity) {
+      setState(() => _error =
+          'Only ${_IngredientRow._trimZeros(_selected!.stockQuantity)} ${_selected!.unitDisplay} in stock.');
+      return;
+    }
+    if (_reason == null) {
+      setState(() => _error = 'Select a reason.');
+      return;
+    }
+    final customReason = _otherReasonCtrl.text.trim();
+    if (_reason == 'Other' && customReason.isEmpty) {
+      setState(() => _error = 'Enter a reason.');
+      return;
+    }
+
+    widget.provider.recordManualAdjustment(
+      _selected!.id,
+      delta: -qty,
+      reason: _reason == 'Other' ? customReason : _reason!,
+      note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+      staffId: widget.staffId,
+      staffName: widget.staffName,
+    );
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.slate,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: Text('Withdraw stock', style: AppTextStyles.body(size: 15, weight: FontWeight.w700)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Item', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            Autocomplete<Ingredient>(
+              displayStringForOption: (i) => i.name,
+              optionsBuilder: (value) {
+                if (value.text.isEmpty) return const Iterable<Ingredient>.empty();
+                final query = value.text.toLowerCase();
+                return widget.ingredients.where((i) => i.name.toLowerCase().contains(query));
+              },
+              onSelected: (i) => setState(() {
+                _selected = i;
+                _error = null;
+              }),
+              fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  style: AppTextStyles.body(size: 14),
+                  decoration: const InputDecoration(hintText: 'Type to search...'),
+                );
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    color: AppColors.slateField,
+                    borderRadius: BorderRadius.circular(10),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 220, maxWidth: 300),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final option = options.elementAt(index);
+                          return InkWell(
+                            onTap: () => onSelected(option),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              child: Text(
+                                '${option.name} · ${_IngredientRow._trimZeros(option.stockQuantity)} ${option.unitDisplay}',
+                                style: AppTextStyles.body(size: 13),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _selected != null
+                  ? 'Qty to withdraw (${_selected!.unitDisplay})'
+                  : 'Qty to withdraw',
+              style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _qtyCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: AppTextStyles.body(size: 14),
+              decoration: const InputDecoration(hintText: 'e.g. 20'),
+            ),
+            const SizedBox(height: 14),
+            Text('Reason', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              value: _reason,
+              dropdownColor: AppColors.slate,
+              style: AppTextStyles.body(size: 14),
+              decoration: const InputDecoration(hintText: 'Select a reason'),
+              items: kStockAdjustmentReasons
+                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                  .toList(),
+              onChanged: (value) => setState(() {
+                _reason = value;
+                _error = null;
+              }),
+            ),
+            if (_reason == 'Other') ...[
+              const SizedBox(height: 10),
+              TextField(
+                controller: _otherReasonCtrl,
+                style: AppTextStyles.body(size: 13),
+                decoration: const InputDecoration(hintText: 'Enter reason'),
+              ),
+            ],
+            const SizedBox(height: 10),
+            TextField(
+              controller: _noteCtrl,
+              style: AppTextStyles.body(size: 13),
+              decoration: const InputDecoration(hintText: 'Note (optional)'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: AppTextStyles.body(size: 12.5, color: AppColors.ledgerRed)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text('Withdraw', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledgerRed)),
+        ),
+      ],
     );
   }
 }
@@ -143,72 +384,33 @@ class _IngredientRow extends StatelessWidget {
   final Ingredient ingredient;
   final IngredientProvider provider;
   final String label;
+  final String staffId;
+  final String staffName;
 
   const _IngredientRow({
     required this.ingredient,
     required this.provider,
     required this.label,
+    required this.staffId,
+    required this.staffName,
   });
 
   void _openStockDialog(BuildContext context) {
-    final qtyCtrl = TextEditingController(text: _trimZeros(ingredient.stockQuantity));
-    final thresholdCtrl = TextEditingController(
-      text: ingredient.lowStockThreshold != null ? _trimZeros(ingredient.lowStockThreshold!) : '',
-    );
-
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.slate,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text(
-          ingredient.name,
-          style: AppTextStyles.body(size: 15, weight: FontWeight.w700),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Current stock (${ingredient.unitDisplay})',
-              style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: qtyCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              autofocus: true,
-              style: AppTextStyles.body(size: 14),
-              decoration: const InputDecoration(hintText: 'e.g. 500'),
-            ),
-            const SizedBox(height: 16),
-            Text('Low-stock alert at', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: thresholdCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: AppTextStyles.body(size: 14),
-              decoration: const InputDecoration(hintText: 'e.g. 50 (optional)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () {
-              final qty = double.tryParse(qtyCtrl.text.trim());
-              final threshold = double.tryParse(thresholdCtrl.text.trim());
-              if (qty != null) provider.setStock(ingredient.id, qty);
-              provider.updateIngredient(ingredient.id, lowStockThreshold: threshold);
-              Navigator.of(context).pop();
-            },
-            child: Text('Save', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.tillGreen)),
-          ),
-        ],
+      builder: (_) => _StockAdjustDialog(
+        ingredient: ingredient,
+        provider: provider,
+        staffId: staffId,
+        staffName: staffName,
       ),
+    );
+  }
+
+  void _openHistory(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => _MovementHistoryDialog(ingredient: ingredient, provider: provider),
     );
   }
 
@@ -316,6 +518,12 @@ class _IngredientRow extends StatelessWidget {
             ),
           ),
           IconButton(
+            icon: const Icon(Icons.history, size: 19),
+            color: AppColors.textSecondary,
+            tooltip: 'Stock history',
+            onPressed: () => _openHistory(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.edit_outlined, size: 19),
             color: AppColors.textSecondary,
             tooltip: 'Edit',
@@ -329,6 +537,285 @@ class _IngredientRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Stock-adjust dialog, opened by tapping an ingredient row. Splits
+/// into two independent parts:
+///  - Quantity: if changed from the current stock, requires a reason
+///    (see kStockAdjustmentReasons) and writes through
+///    IngredientProvider.recordManualAdjustment so it lands in the
+///    movement log with who/why attached.
+///  - Low-stock threshold: unrelated to the movement log, saved as
+///    before via updateIngredient regardless of whether quantity
+///    changed.
+/// Stateful (unlike the old inline builder) so the reason dropdown/
+/// validation error can update within the dialog.
+class _StockAdjustDialog extends StatefulWidget {
+  final Ingredient ingredient;
+  final IngredientProvider provider;
+  final String staffId;
+  final String staffName;
+
+  const _StockAdjustDialog({
+    required this.ingredient,
+    required this.provider,
+    required this.staffId,
+    required this.staffName,
+  });
+
+  @override
+  State<_StockAdjustDialog> createState() => _StockAdjustDialogState();
+}
+
+class _StockAdjustDialogState extends State<_StockAdjustDialog> {
+  late final TextEditingController _qtyCtrl;
+  late final TextEditingController _thresholdCtrl;
+  final _noteCtrl = TextEditingController();
+  String? _reason;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyCtrl = TextEditingController(text: _IngredientRow._trimZeros(widget.ingredient.stockQuantity));
+    _thresholdCtrl = TextEditingController(
+      text: widget.ingredient.lowStockThreshold != null
+          ? _IngredientRow._trimZeros(widget.ingredient.lowStockThreshold!)
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    _thresholdCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  double get _delta {
+    final qty = double.tryParse(_qtyCtrl.text.trim());
+    if (qty == null) return 0;
+    return qty - widget.ingredient.stockQuantity;
+  }
+
+  void _save() {
+    final threshold = double.tryParse(_thresholdCtrl.text.trim());
+    final delta = _delta;
+
+    // Only require a reason when the quantity actually changed —
+    // editing just the low-stock threshold shouldn't be blocked by an
+    // unrelated dropdown. A tiny epsilon avoids requiring a reason
+    // over float rounding noise (e.g. 500 re-typed as 500.0).
+    if (delta.abs() > 0.0001 && _reason == null) {
+      setState(() => _error = 'Select a reason for the stock change.');
+      return;
+    }
+
+    if (delta.abs() > 0.0001) {
+      widget.provider.recordManualAdjustment(
+        widget.ingredient.id,
+        delta: delta,
+        reason: _reason!,
+        note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+        staffId: widget.staffId,
+        staffName: widget.staffName,
+      );
+    }
+    // Threshold always saves regardless of whether quantity changed.
+    widget.provider.updateIngredient(widget.ingredient.id, lowStockThreshold: threshold);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showReason = _delta.abs() > 0.0001;
+
+    return AlertDialog(
+      backgroundColor: AppColors.slate,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: Text(
+        widget.ingredient.name,
+        style: AppTextStyles.body(size: 15, weight: FontWeight.w700),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Current stock (${widget.ingredient.unitDisplay})',
+              style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _qtyCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+              style: AppTextStyles.body(size: 14),
+              decoration: const InputDecoration(hintText: 'e.g. 500'),
+              onChanged: (_) => setState(() {}), // live-show/hide the reason picker
+            ),
+            if (showReason) ...[
+              const SizedBox(height: 14),
+              Text('Reason', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: _reason,
+                dropdownColor: AppColors.slate,
+                style: AppTextStyles.body(size: 14),
+                decoration: const InputDecoration(hintText: 'Select a reason'),
+                items: kStockAdjustmentReasons
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                    .toList(),
+                onChanged: (value) => setState(() {
+                  _reason = value;
+                  _error = null;
+                }),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _noteCtrl,
+                style: AppTextStyles.body(size: 13),
+                decoration: const InputDecoration(hintText: 'Note (optional)'),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text('Low-stock alert at', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _thresholdCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: AppTextStyles.body(size: 14),
+              decoration: const InputDecoration(hintText: 'e.g. 50 (optional)'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: AppTextStyles.body(size: 12.5, color: AppColors.ledgerRed)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: _save,
+          child: Text('Save', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.tillGreen)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Read-only recent-activity view for one ingredient — every manual
+/// adjustment (with reason/note/who) and every sale-driven deduction,
+/// newest first. Opened via the history icon on each ingredient row.
+class _MovementHistoryDialog extends StatelessWidget {
+  final Ingredient ingredient;
+  final IngredientProvider provider;
+
+  const _MovementHistoryDialog({required this.ingredient, required this.provider});
+
+  String _formatDelta(double delta) {
+    final sign = delta > 0 ? '+' : '';
+    return '$sign${_IngredientRow._trimZeros(delta)} ${ingredient.unitDisplay}';
+  }
+
+  String _formatDate(DateTime dt) {
+    final two = (int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.month)}/${two(dt.day)}/${dt.year} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.slate,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: Text(
+        '${ingredient.name} — History',
+        style: AppTextStyles.body(size: 15, weight: FontWeight.w700),
+      ),
+      content: SizedBox(
+        width: 360,
+        height: 380,
+        child: FutureBuilder<List<IngredientStockMovement>>(
+          future: provider.loadMovementsFor(ingredient.id),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text('Could not load history — try again.',
+                    style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed)),
+              );
+            }
+            final movements = snapshot.data ?? [];
+            if (movements.isEmpty) {
+              return Center(
+                child: Text('No stock changes recorded yet.',
+                    style: AppTextStyles.body(size: 13, color: AppColors.textMuted)),
+              );
+            }
+            return ListView.separated(
+              itemCount: movements.length,
+              separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.slateBorder),
+              itemBuilder: (context, index) {
+                final m = movements[index];
+                final isAdd = m.delta > 0;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            _formatDelta(m.delta),
+                            style: AppTextStyles.mono(
+                              size: 13,
+                              weight: FontWeight.w700,
+                              color: isAdd ? AppColors.tillGreen : AppColors.ledgerRed,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              m.source == 'sale' ? 'Sale' : m.reason,
+                              style: AppTextStyles.body(size: 12.5, weight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(_formatDate(m.createdAt), style: AppTextStyles.body(size: 10.5, color: AppColors.textMuted)),
+                        ],
+                      ),
+                      if (m.note != null && m.note!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(m.note!, style: AppTextStyles.body(size: 11.5, color: AppColors.textSecondary)),
+                      ],
+                      if (m.staffName != null && m.staffName!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(m.staffName!, style: AppTextStyles.body(size: 11, color: AppColors.textMuted)),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Close', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+        ),
+      ],
     );
   }
 }
