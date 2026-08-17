@@ -13,6 +13,7 @@ import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../state/recipe_provider.dart';
+import '../state/store_provider.dart';
 
 enum _Section { register, transactions, reports, settings }
 
@@ -137,13 +138,18 @@ class _HomeShellState extends State<HomeShell> {
     required bool isActive,
     required VoidCallback onTap,
     int badgeCount = 0,
+    // Plain dot, no number — for a state that needs attention but
+    // isn't a count of anything (e.g. "your trial is ending soon").
+    // A numeric badge would misleadingly imply "3 things pending"
+    // when there's really just one ongoing condition to notice.
+    bool showWarningDot = false,
   }) {
     final button = IconButton(
       icon: Icon(icon, color: isActive ? AppColors.ledAmber : AppColors.textSecondary),
       tooltip: tooltip,
       onPressed: onTap,
     );
-    if (badgeCount <= 0) return button;
+    if (badgeCount <= 0 && !showWarningDot) return button;
 
     // A queued-but-unsynced sale count on the Transactions icon — the
     // only other sign of a pending sale is its #PENDING row inside the
@@ -157,7 +163,17 @@ class _HomeShellState extends State<HomeShell> {
           right: 4,
           top: 4,
           child: IgnorePointer(
-            child: Container(
+            child: showWarningDot
+                ? Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: AppColors.ledgerRed,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.slate, width: 1.5),
+                    ),
+                  )
+                : Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
               decoration: BoxDecoration(
@@ -180,6 +196,22 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pendingCount = context.watch<TransactionProvider>().pendingCount;
+
+    // Trial/plan urgency — shown as a plain dot on the Settings icon
+    // rather than the full "Free trial · N days left" text anywhere
+    // outside Settings itself, so it stays quiet most of the time and
+    // only draws the eye once it actually matters (last few days, or
+    // already expired). Full detail always lives in Settings -> Plan.
+    final store = context.watch<StoreProvider>().store;
+    final daysLeft = store?.trialDaysRemaining;
+    final planNeedsAttention = store != null && (store.isExpired || (daysLeft != null && daysLeft <= 3));
+    final settingsTooltip = store == null
+        ? 'Settings'
+        : store.isExpired
+            ? 'Settings — trial expired'
+            : planNeedsAttention
+                ? 'Settings — trial ends in $daysLeft day${daysLeft == 1 ? '' : 's'}'
+                : 'Settings';
 
     return Scaffold(
       backgroundColor: AppColors.charcoal,
@@ -220,9 +252,10 @@ class _HomeShellState extends State<HomeShell> {
           if (_isAdmin)
             _headerIcon(
               icon: Icons.settings_outlined,
-              tooltip: 'Settings',
+              tooltip: settingsTooltip,
               isActive: _section == _Section.settings,
               onTap: () => setState(() => _section = _Section.settings),
+              showWarningDot: planNeedsAttention,
             ),
           IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textSecondary),

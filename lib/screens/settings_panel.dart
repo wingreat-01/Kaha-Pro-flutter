@@ -9,6 +9,7 @@ import 'users_panel.dart';
 import 'categories_panel.dart';
 import '../widgets/bounded_content.dart';
 import '../models/store.dart';
+import 'upgrade_screen.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -83,8 +84,9 @@ class SettingsPanel extends StatelessWidget {
           label: 'Plan',
           subtitle: _planSubtitle(store),
           isWarning: store?.isExpired ?? false,
-          // No billing/upgrade screen yet (Phase 5) -- row is
-          // read-only for now, same as Store details/About below.
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const UpgradeScreen()),
+          ),
         ),
         const _SettingsRow(
           icon: Icons.storefront_outlined,
@@ -121,7 +123,7 @@ String _planSubtitle(Store? store) {
       if (days != null) {
         return 'Free trial · $days day${days == 1 ? '' : 's'} left';
       }
-      return 'Free plan';
+      return 'Free trial';
   }
 }
 
