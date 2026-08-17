@@ -1,3 +1,19 @@
+/// Sentinel used by [Ingredient.copyWith] and
+/// IngredientProvider.updateIngredient to tell "this field wasn't
+/// provided, leave it alone" apart from "this field was explicitly
+/// passed as null, clear it." A plain nullable parameter can't
+/// distinguish those two cases -- which caused a real bug: saving
+/// just the low-stock threshold was silently nulling out
+/// cost_per_unit and unit_label (and vice versa, editing name/cost
+/// was nulling out the threshold), because every optional field was
+/// always included in the Supabase update regardless of whether the
+/// caller meant to touch it.
+class Unset {
+  const Unset._();
+}
+
+const unset = Unset._();
+
 /// A raw material / supply item -- store_id-scoped, entirely separate
 /// from Product. Managed from its own admin screen (ingredients_panel.dart);
 /// never appears in the Register grid.
@@ -50,19 +66,20 @@ class Ingredient {
   Ingredient copyWith({
     String? name,
     String? unit,
-    String? unitLabel,
+    Object? unitLabel = unset,
     double? stockQuantity,
-    double? lowStockThreshold,
-    double? costPerUnit,
+    Object? lowStockThreshold = unset,
+    Object? costPerUnit = unset,
   }) {
     return Ingredient(
       id: id,
       name: name ?? this.name,
       unit: unit ?? this.unit,
-      unitLabel: unitLabel ?? this.unitLabel,
+      unitLabel: identical(unitLabel, unset) ? this.unitLabel : unitLabel as String?,
       stockQuantity: stockQuantity ?? this.stockQuantity,
-      lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
-      costPerUnit: costPerUnit ?? this.costPerUnit,
+      lowStockThreshold:
+          identical(lowStockThreshold, unset) ? this.lowStockThreshold : lowStockThreshold as double?,
+      costPerUnit: identical(costPerUnit, unset) ? this.costPerUnit : costPerUnit as double?,
     );
   }
 }

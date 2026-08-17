@@ -83,9 +83,9 @@ class IngredientProvider extends ChangeNotifier {
     String id, {
     String? name,
     String? unit,
-    String? unitLabel,
-    double? lowStockThreshold,
-    double? costPerUnit,
+    Object? unitLabel = unset,
+    Object? lowStockThreshold = unset,
+    Object? costPerUnit = unset,
   }) async {
     final index = _ingredients.indexWhere((i) => i.id == id);
     if (index < 0) return;
@@ -105,9 +105,9 @@ class IngredientProvider extends ChangeNotifier {
       await _client.from('ingredients').update({
         if (name != null) 'name': name.trim(),
         if (unit != null) 'unit': unit,
-        'unit_label': unitLabel,
-        'low_stock_threshold': lowStockThreshold,
-        'cost_per_unit': costPerUnit,
+        if (!identical(unitLabel, unset)) 'unit_label': unitLabel,
+        if (!identical(lowStockThreshold, unset)) 'low_stock_threshold': lowStockThreshold,
+        if (!identical(costPerUnit, unset)) 'cost_per_unit': costPerUnit,
       }).eq('id', id);
     } catch (e) {
       _ingredients[index] = previous;
