@@ -20,6 +20,12 @@ const corsHeaders = {
 
 const MAX_TOOL_ITERATIONS = 6; // guard against a runaway tool-call loop
 
+// Providers that require a prepaid balance -- see fallback.ts's provider
+// list comment. Used to tag ai_usage_log rows so a future breakdown
+// query can separate "resolved on a free tier" from "fell through to a
+// paid one" without re-deriving that from the provider name each time.
+const PAID_PROVIDERS = new Set(['deepseek', 'openai']);
+
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function fmtDate(d: Date): string {
@@ -221,12 +227,37 @@ Deno.serve(async (req: Request) => {
   let creditsRemaining: number | null = null;
   const { data: storeRow, error: creditReadError } = await supabase
     .from('stores')
-    .select('ai_credits_remaining')
+    .select('id, ai_credits_remaining')
     .single();
   if (creditReadError) {
     console.error('Could not read back ai_credits_remaining:', creditReadError);
   } else {
     creditsRemaining = storeRow?.ai_credits_remaining ?? null;
+  }
+
+  // 3. Usage-breakdown log — metrics side-channel only, never allowed
+  // to affect the response. This is what lets a future credit-ceiling
+  // decision (see kahapro-flutter-migration notes on the 30/90/20
+  // bump) be made from real Groq/Mistral/Gemini/OpenRouter-vs-paid
+  // hit-rate data instead of judgment. Deliberately not awaited on
+  // the response path -- EdgeRuntime.waitUntil lets it finish after
+  // the response has already gone out, and its own .catch() means a
+  // failed insert can never surface as a failed AI turn.
+  if (storeRow?.id) {
+    const logPromise = supabase.from('ai_usage_log').insert({
+      store_id: storeRow.id,
+      provider: providerUsed,
+      is_paid_tier: PAID_PROVIDERS.has(providerUsed),
+    }).then(({ error }) => {
+      if (error) console.error('ai_usage_log insert failed (non-fatal):', error);
+    });
+    // @ts-ignore -- EdgeRuntime is a Supabase/Deno Deploy global, not in the standard Deno types.
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(logPromise);
+    } else {
+      logPromise.catch(() => {}); // local/dev fallback where EdgeRuntime isn't present
+    }
   }
 
   return jsonResponse(

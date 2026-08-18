@@ -45,9 +45,8 @@ const List<_PlanInfo> _kPlans = [
       'Everything in Pro, on us for 15 days',
       'Unlimited staff accounts',
       'Unlimited transaction history',
-      '30 AI assistant credits / month',
+      '20 AI assistant credits / month',
       'Unlimited products',
-      'Weekly emailed cloud sync',
     ],
     footnote: 'One-time trial — pick Basic or Pro once it ends to keep going.',
   ),
@@ -59,9 +58,8 @@ const List<_PlanInfo> _kPlans = [
     features: [
       '5 staff accounts',
       '90 days transaction history',
-      '10 AI assistant credits / month',
+      '30 AI assistant credits / month',
       'Up to 30 products',
-      'Monthly emailed cloud sync',
     ],
   ),
   _PlanInfo(
@@ -72,9 +70,8 @@ const List<_PlanInfo> _kPlans = [
     features: [
       'Unlimited staff accounts',
       'Unlimited transaction history',
-      '30 AI assistant credits / month',
+      '90 AI assistant credits / month',
       'Unlimited products',
-      'Weekly emailed cloud sync',
       'Priority support',
     ],
   ),

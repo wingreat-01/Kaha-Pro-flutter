@@ -342,7 +342,7 @@ class _InputBar extends StatelessWidget {
                 textInputAction: TextInputAction.send,
                 style: AppTextStyles.mono(size: 13, color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: 'Ask the assistant… (Enter to send, Shift+Enter for new line)',
+                  hintText: 'Ask the assistant…',
                   hintStyle: AppTextStyles.mono(size: 13, color: AppColors.textMuted),
                   filled: true,
                   fillColor: AppColors.charcoal,

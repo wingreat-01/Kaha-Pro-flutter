@@ -149,9 +149,10 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   /// Builds the `messages` array sent to the edge function: an
-  /// optional summary turn for older context, the last few *whole
-  /// turns* verbatim (including any hidden tool_calls/tool messages),
-  /// then the new message.
+  /// optional summary turn for older context, then the last few
+  /// *whole turns* verbatim (including any hidden tool_calls/tool
+  /// messages) -- this already includes the new user message, since
+  /// [sendMessage] appends it to [_messages] before calling this.
   ///
   /// Windowing by turn rather than raw message count matters here: a
   /// withdraw_inventory confirmation round-trip is a user message plus
@@ -160,7 +161,7 @@ class AiAssistantProvider extends ChangeNotifier {
   /// without its result (or vice versa), and more importantly would
   /// drop the item_id the model needs to resolve "yes, confirm" on the
   /// very next message.
-  List<Map<String, dynamic>> _composeMessages(String newUserMessage) {
+  List<Map<String, dynamic>> _composeMessages() {
     final userIndices = <int>[
       for (var i = 0; i < _messages.length; i++)
         if (_messages[i].role == 'user') i,
@@ -177,7 +178,6 @@ class AiAssistantProvider extends ChangeNotifier {
     for (final m in recent) {
       out.add(m.toWireJson());
     }
-    out.add({'role': 'user', 'content': newUserMessage});
     return out;
   }
 
@@ -197,7 +197,7 @@ class AiAssistantProvider extends ChangeNotifier {
     try {
       final res = await _client.functions.invoke(
         'ai-assistant',
-        body: {'messages': _composeMessages(trimmed)},
+        body: {'messages': _composeMessages()},
       );
 
       final data = res.data;
