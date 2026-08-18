@@ -59,6 +59,8 @@ class Transaction {
   final double total;
   final double cashTendered;
   final double change;
+  final String? paymentMethodId; // FK snapshot — null on rows recorded before this feature
+  final String? paymentMethodName; // display snapshot, since a method can be renamed/deleted later
 
   const Transaction({
     this.id,
@@ -70,6 +72,8 @@ class Transaction {
     required this.total,
     required this.cashTendered,
     required this.change,
+    this.paymentMethodId,
+    this.paymentMethodName,
   });
 
   /// True for a sale that's been recorded locally (queued while

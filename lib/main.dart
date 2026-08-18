@@ -11,6 +11,7 @@ import 'state/store_provider.dart';
 import 'state/transaction_provider.dart';
 import 'state/user_provider.dart';
 import 'state/ai_assistant_provider.dart';
+import 'state/payment_method_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/store_setup_screen.dart';
 import 'screens/add_self_as_staff_screen.dart';
@@ -51,6 +52,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => AiAssistantProvider()),
+        ChangeNotifierProvider(create: (_) => PaymentMethodProvider()),
       ],
       child: const KahaproApp(),
     ),

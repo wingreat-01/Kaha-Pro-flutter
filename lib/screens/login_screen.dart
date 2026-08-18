@@ -9,6 +9,7 @@ import '../state/ingredient_provider.dart';
 import '../state/product_provider.dart';
 import '../state/recipe_provider.dart';
 import '../state/store_provider.dart';
+import '../state/payment_method_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -110,6 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
         context.read<TransactionProvider>().loadFromSupabase(),
         context.read<StoreProvider>().loadFromSupabase(),
         context.read<IngredientProvider>().loadFromSupabase(),
+        context.read<PaymentMethodProvider>().loadFromSupabase(),
       ]);
 
       // Phase E — restore any cart left over from a previous session

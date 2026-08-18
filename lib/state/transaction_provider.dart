@@ -159,7 +159,7 @@ class TransactionProvider extends ChangeNotifier {
 
     final rows = await _client
         .from('transactions')
-        .select('*, transaction_line_items(*)')
+        .select('*, transaction_line_items(*), payment_methods(name)')
         .order('created_at');
 
     _transactions
@@ -186,6 +186,8 @@ class TransactionProvider extends ChangeNotifier {
       total: pending.total,
       cashTendered: pending.cashTendered,
       change: pending.change,
+      paymentMethodId: pending.paymentMethodId,
+      paymentMethodName: pending.paymentMethodName,
     );
   }
 
@@ -221,6 +223,8 @@ class TransactionProvider extends ChangeNotifier {
     required double cashTendered,
     required double change,
     String? cashierName,
+    String? paymentMethodId,
+    String? paymentMethodName,
   }) async {
     final lineItems = cartItems.map(TransactionLineItem.fromCartItem).toList();
 
@@ -231,6 +235,7 @@ class TransactionProvider extends ChangeNotifier {
         'p_change_amount': change,
         'p_cashier_name': cashierName,
         'p_items': _itemsJson(lineItems),
+        'p_payment_method_id': paymentMethodId,
       }).single();
 
       final transaction = Transaction(
@@ -242,6 +247,13 @@ class TransactionProvider extends ChangeNotifier {
         total: total,
         cashTendered: cashTendered,
         change: change,
+        paymentMethodId: row['payment_method_id'] as String?,
+        // record_transaction's RETURNS transactions doesn't include the
+        // joined method name (that's only fetched via loadFromSupabase's
+        // select) — carry the name the caller already had (from
+        // PaymentMethodProvider) rather than leaving it null for the
+        // rest of this session.
+        paymentMethodName: paymentMethodName,
       );
 
       _transactions.add(transaction);
@@ -255,6 +267,8 @@ class TransactionProvider extends ChangeNotifier {
           cashTendered: cashTendered,
           change: change,
           cashierName: cashierName,
+          paymentMethodId: paymentMethodId,
+          paymentMethodName: paymentMethodName,
         );
       }
       rethrow;
@@ -287,6 +301,8 @@ class TransactionProvider extends ChangeNotifier {
     required double cashTendered,
     required double change,
     String? cashierName,
+    String? paymentMethodId,
+    String? paymentMethodName,
   }) {
     final pending = PendingSale(
       localId: 'local-${DateTime.now().microsecondsSinceEpoch}',
@@ -296,6 +312,8 @@ class TransactionProvider extends ChangeNotifier {
       cashierName: cashierName,
       items: lineItems,
       queuedAt: DateTime.now(),
+      paymentMethodId: paymentMethodId,
+      paymentMethodName: paymentMethodName,
     );
     _pendingQueue.add(pending);
     unawaited(_savePendingToDisk());
@@ -327,6 +345,7 @@ class TransactionProvider extends ChangeNotifier {
           'p_change_amount': pending.change,
           'p_cashier_name': pending.cashierName,
           'p_items': _itemsJson(pending.items),
+          'p_payment_method_id': pending.paymentMethodId,
         }).single();
 
         final synced = Transaction(
@@ -338,6 +357,8 @@ class TransactionProvider extends ChangeNotifier {
           total: pending.total,
           cashTendered: pending.cashTendered,
           change: pending.change,
+          paymentMethodId: row['payment_method_id'] as String?,
+          paymentMethodName: pending.paymentMethodName,
         );
 
         // Swap the PENDING placeholder for the now-real synced row.
@@ -415,6 +436,11 @@ class TransactionProvider extends ChangeNotifier {
       total: (row['total'] as num).toDouble(),
       cashTendered: (row['cash_tendered'] as num).toDouble(),
       change: (row['change_amount'] as num).toDouble(),
+      paymentMethodId: row['payment_method_id'] as String?,
+      // Null on rows where the method was later deleted (FK is
+      // nullable, no ON DELETE restriction assumed) or on rows
+      // recorded before this feature existed.
+      paymentMethodName: (row['payment_methods'] as Map<String, dynamic>?)?['name'] as String?,
     );
   }
 }

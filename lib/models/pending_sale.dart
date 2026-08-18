@@ -15,6 +15,8 @@ class PendingSale {
   final String? cashierName;
   final List<TransactionLineItem> items;
   final DateTime queuedAt;
+  final String? paymentMethodId;
+  final String? paymentMethodName;
 
   const PendingSale({
     required this.localId,
@@ -24,6 +26,8 @@ class PendingSale {
     required this.cashierName,
     required this.items,
     required this.queuedAt,
+    this.paymentMethodId,
+    this.paymentMethodName,
   });
 
   Map<String, dynamic> toJson() => {
@@ -44,6 +48,8 @@ class PendingSale {
                 })
             .toList(),
         'queuedAt': queuedAt.toIso8601String(),
+        'paymentMethodId': paymentMethodId,
+        'paymentMethodName': paymentMethodName,
       };
 
   factory PendingSale.fromJson(Map<String, dynamic> json) => PendingSale(
@@ -64,6 +70,11 @@ class PendingSale {
                 ))
             .toList(),
         queuedAt: DateTime.parse(json['queuedAt'] as String),
+        // Absent on any queue entry persisted before this feature —
+        // decode as null rather than throwing, same as cashierName's
+        // existing nullable treatment above.
+        paymentMethodId: json['paymentMethodId'] as String?,
+        paymentMethodName: json['paymentMethodName'] as String?,
       );
 
   /// Whole-queue helpers, so TransactionProvider only ever does one

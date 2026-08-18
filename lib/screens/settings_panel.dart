@@ -7,6 +7,7 @@ import 'ingredients_panel.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'categories_panel.dart';
+import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
 import '../models/store.dart';
 import 'upgrade_screen.dart';
@@ -56,6 +57,14 @@ class SettingsPanel extends StatelessWidget {
           subtitle: 'Edit product categories',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const CategoriesPanel()),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.payments_outlined,
+          label: 'Payment Methods',
+          subtitle: 'Set which payment modes you accept',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PaymentMethodsPanel()),
           ),
         ),
         _SettingsRow(

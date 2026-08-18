@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../state/cart_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../state/product_provider.dart';
+import '../state/payment_method_provider.dart';
+import '../models/payment_method.dart';
 import '../state/recipe_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
@@ -58,6 +60,26 @@ class _CheckoutModalState extends State<CheckoutModal> {
   String? _error;
   bool _submitting = false;
 
+  // Selected on first build once PaymentMethodProvider is available —
+  // defaults to whatever's first in sort_order (Cash, per the seeded
+  // defaults) rather than nothing selected, so the common case needs
+  // zero taps.
+  PaymentMethod? _selectedMethod;
+  bool _methodInitialized = false;
+
+  // Only Cash shows the tendered-amount/change UI — every other method
+  // (GCash, Maya, Bank Transfer, ...) is an exact-amount transfer, so
+  // there's no "change" to calculate. Matched by name rather than a
+  // separate flag on PaymentMethod, since Cash is a seeded default the
+  // owner could rename — but "is this literally cash" is inherent to
+  // the payment flow, not something the owner should be able to break
+  // by renaming a row, so this checks the *original* seeded name.
+  // If the owner deletes/renames the seeded "Cash" row entirely, this
+  // falls back to non-cash behavior for everything, which is the safer
+  // failure mode (no one accidentally skips collecting the right
+  // amount).
+  bool get _isCash => _selectedMethod?.name.trim().toLowerCase() == 'cash';
+
   double get _total => widget.cart.total;
 
   double? get _tendered {
@@ -74,6 +96,8 @@ class _CheckoutModalState extends State<CheckoutModal> {
   }
 
   bool get _canConfirm {
+    if (_selectedMethod == null) return false;
+    if (!_isCash) return true;
     final tendered = _tendered;
     return tendered != null && tendered >= _total;
   }
@@ -103,9 +127,12 @@ class _CheckoutModalState extends State<CheckoutModal> {
   // cash values a customer would realistically hand over — tapping one
   // *adds* it to whatever's already entered, so a couple of taps can
   // stack bills together. An amount only shows if it alone could cover
-  // the total (e.g. a ₱93 total hides "+₱50" but keeps "+₱100", "+₱500",
-  // "+₱1000"). These are the actual Philippine peso bill denominations.
-  static const List<double> _billDenominations = [20, 50, 100, 500, 1000];
+  // the total (e.g. a ₱170 total hides ₱20/₱50/₱100 but keeps ₱200,
+  // ₱500, ₱1000 — someone paying with two ₱100 bills, a ₱500 bill, or
+  // only having a ₱1000 bill are all real cases, so nothing above the
+  // due amount gets filtered out just because a smaller bill would also
+  // clear it). These are the actual Philippine peso bill denominations.
+  static const List<double> _billDenominations = [20, 50, 100, 200, 500, 1000];
 
   // Above ₱1000, no single bill covers the total, so there's nothing
   // sensible to "add". Instead offer nice round-up targets — next
@@ -129,7 +156,11 @@ class _CheckoutModalState extends State<CheckoutModal> {
       : _billDenominations.where((amount) => amount >= _total).toList();
 
   Future<void> _confirm() async {
-    if (!_canConfirm) {
+    if (_selectedMethod == null) {
+      setState(() => _error = 'Select a payment method.');
+      return;
+    }
+    if (_isCash && !_canConfirm) {
       setState(() => _error = 'Amount tendered is less than the total due.');
       return;
     }
@@ -140,8 +171,10 @@ class _CheckoutModalState extends State<CheckoutModal> {
       _error = null;
     });
 
-    final tendered = _tendered!;
-    final change = _change;
+    // Non-cash methods are exact-amount transfers — no tendered/change
+    // to enter, so both collapse to the total itself / zero.
+    final tendered = _isCash ? _tendered! : _total;
+    final change = _isCash ? _change : 0.0;
     final soldItems = widget.cart.items; // snapshot before clearing
 
     try {
@@ -151,6 +184,8 @@ class _CheckoutModalState extends State<CheckoutModal> {
             cashTendered: tendered,
             change: change,
             cashierName: widget.cashierName,
+            paymentMethodId: _selectedMethod!.id,
+            paymentMethodName: _selectedMethod!.name,
           );
 
       if (!mounted) return;
@@ -216,6 +251,17 @@ class _CheckoutModalState extends State<CheckoutModal> {
 
   @override
   Widget build(BuildContext context) {
+    final methods = context.watch<PaymentMethodProvider>().activeMethods;
+
+    // Default to the first active method (Cash, per the seeded
+    // defaults/sort_order) the first time methods are available —
+    // done in build() rather than initState() since the provider's
+    // data may not be loaded yet when this modal first opens.
+    if (!_methodInitialized && methods.isNotEmpty) {
+      _selectedMethod = methods.first;
+      _methodInitialized = true;
+    }
+
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -256,7 +302,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
                 LedTotal(amount: _total, label: 'TOTAL DUE'),
                 const SizedBox(height: 18),
                 Text(
-                  'CASH TENDERED',
+                  'PAYMENT METHOD',
                   style: AppTextStyles.mono(
                     size: 11,
                     weight: FontWeight.w600,
@@ -265,44 +311,82 @@ class _CheckoutModalState extends State<CheckoutModal> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
-                  decoration: InputDecoration(
-                    prefixText: '₱ ',
-                    prefixStyle: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
-                    hintText: '0.00',
+                if (methods.isEmpty)
+                  Text(
+                    'No payment methods set up — add one in Settings.',
+                    style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final method in methods)
+                        _MethodChip(
+                          label: method.name,
+                          selected: _selectedMethod?.id == method.id,
+                          onTap: () => setState(() {
+                            _selectedMethod = method;
+                            _error = null;
+                          }),
+                        ),
+                    ],
                   ),
-                  onChanged: (_) => setState(() => _error = null),
-                  onSubmitted: (_) => _confirm(),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _QuickChip(label: 'Exact', onTap: _setExact),
-                    for (final amount in _quickAmountOptions)
-                      _QuickChip(
-                        label: _useRoundUpTargets
-                            ? '₱${amount.toStringAsFixed(0)}'
-                            : '+₱${amount.toStringAsFixed(0)}',
-                        onTap: () => _useRoundUpTargets
-                            ? _setQuickTarget(amount)
-                            : _addQuickAmount(amount),
-                      ),
-                  ],
-                ),
                 const SizedBox(height: 18),
-                LedTotal(
-                  amount: _change,
-                  label: 'CHANGE',
-                  fontSize: 26,
-                  color: AppColors.tillGreen,
-                ),
+                if (_isCash) ...[
+                  Text(
+                    'CASH TENDERED',
+                    style: AppTextStyles.mono(
+                      size: 11,
+                      weight: FontWeight.w600,
+                      color: AppColors.textMuted,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
+                    decoration: InputDecoration(
+                      prefixText: '₱ ',
+                      prefixStyle: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
+                      hintText: '0.00',
+                    ),
+                    onChanged: (_) => setState(() => _error = null),
+                    onSubmitted: (_) => _confirm(),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _QuickChip(label: 'Exact', onTap: _setExact),
+                      for (final amount in _quickAmountOptions)
+                        _QuickChip(
+                          label: _useRoundUpTargets
+                              ? '₱${amount.toStringAsFixed(0)}'
+                              : '+₱${amount.toStringAsFixed(0)}',
+                          onTap: () => _useRoundUpTargets
+                              ? _setQuickTarget(amount)
+                              : _addQuickAmount(amount),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  LedTotal(
+                    amount: _change,
+                    label: 'CHANGE',
+                    fontSize: 26,
+                    color: AppColors.tillGreen,
+                  ),
+                ] else if (_selectedMethod != null)
+                  Text(
+                    'Confirming ₱${_total.toStringAsFixed(2)} via ${_selectedMethod!.name}. No change due.',
+                    style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+                  ),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
                   Text(
@@ -314,7 +398,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _submitting ? null : _confirm,
+                    onPressed: (_submitting || methods.isEmpty) ? null : _confirm,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.tillGreen,
                       foregroundColor: Colors.white,
@@ -330,6 +414,41 @@ class _CheckoutModalState extends State<CheckoutModal> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MethodChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MethodChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.ledAmber.withOpacity(0.15) : AppColors.slateField,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? AppColors.ledAmber : AppColors.slateBorder,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.mono(
+            size: 12,
+            weight: FontWeight.w700,
+            color: selected ? AppColors.ledAmber : AppColors.textPrimary,
           ),
         ),
       ),
