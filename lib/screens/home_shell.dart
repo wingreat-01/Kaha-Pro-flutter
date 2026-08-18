@@ -9,13 +9,14 @@ import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
 import 'reports_screen.dart';
 import 'settings_panel.dart';
+import 'ai_assistant_screen.dart';
 import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../state/recipe_provider.dart';
 import '../state/store_provider.dart';
 
-enum _Section { register, transactions, reports, settings }
+enum _Section { register, transactions, reports, assistant, settings }
 
 /// App shell — owns top-level navigation between the Register (product
 /// grid + cart), Transactions history, and Settings (Users, Categories,
@@ -122,6 +123,12 @@ class _HomeShellState extends State<HomeShell> {
                 reportBuilder: (range) => context.read<TransactionProvider>().reportFor(range),
               )
             : RegisterScreen(cashierName: widget.user.name);
+      case _Section.assistant:
+        // Defensive fallback — same reasoning as reports/settings: the
+        // header icon that sets this is hidden entirely for
+        // non-admins, so this only matters if _section somehow ends
+        // up here some other way.
+        return _isAdmin ? const AiAssistantScreen() : RegisterScreen(cashierName: widget.user.name);
       case _Section.settings:
         // Defensive fallback — the gear icon that sets this is hidden
         // entirely for non-admins, so this only matters if _section
@@ -213,6 +220,19 @@ class _HomeShellState extends State<HomeShell> {
                 ? 'Settings — trial ends in $daysLeft day${daysLeft == 1 ? '' : 's'}'
                 : 'Settings';
 
+    // Assistant tab gets its own quiet dot when it's actually unusable
+    // (expired trial, or this cycle's credits are gone) rather than
+    // reusing the Settings dot — the two can be true independently
+    // (e.g. plenty of trial days left but credits used up early).
+    final assistantBlocked = store != null && !store.canUseAiAssistant;
+    final assistantTooltip = store == null
+        ? 'AI Assistant'
+        : store.isExpired
+            ? 'AI Assistant — trial expired'
+            : assistantBlocked
+                ? 'AI Assistant — out of credits this month'
+                : 'AI Assistant';
+
     return Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
@@ -248,6 +268,14 @@ class _HomeShellState extends State<HomeShell> {
               tooltip: 'Reports',
               isActive: _section == _Section.reports,
               onTap: () => setState(() => _section = _Section.reports),
+            ),
+          if (_isAdmin)
+            _headerIcon(
+              icon: Icons.auto_awesome_outlined,
+              tooltip: assistantTooltip,
+              isActive: _section == _Section.assistant,
+              onTap: () => setState(() => _section = _Section.assistant),
+              showWarningDot: assistantBlocked,
             ),
           if (_isAdmin)
             _headerIcon(

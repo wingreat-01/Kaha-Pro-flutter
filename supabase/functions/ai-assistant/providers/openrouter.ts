@@ -1,38 +1,21 @@
-export async function callOpenRouter(prompt: string): Promise<string> {
-  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
+// supabase/functions/ai-assistant/providers/openrouter.ts
+import type { ChatMessage, ProviderResponse, ToolDef } from '../types.ts';
+import { callOpenAICompatible } from './openai_compatible.ts';
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://kahapro.app',
-        'X-Title': 'KahaPro',
-      },
-      body: JSON.stringify({
-        model: 'openrouter/free', // random router across all free-variant models — no catalog-drift risk
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 800,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      const err: any = new Error(`OpenRouter error ${res.status}`);
-      err.status = res.status;
-      throw err;
-    }
-
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content;
-    if (!text) throw new Error('OpenRouter returned empty response');
-    return text;
-  } finally {
-    clearTimeout(timeout);
-  }
+export function callOpenRouter(messages: ChatMessage[], tools: ToolDef[]): Promise<ProviderResponse> {
+  return callOpenAICompatible(
+    {
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKeyEnvVar: 'OPENROUTER_API_KEY',
+      // NOTE: switched from 'openrouter/free' to a named tool-calling-capable
+      // free model -- the random free-tier router doesn't reliably support
+      // function calling across whatever it lands on. Verify this model is
+      // still free/available on OpenRouter before deploying.
+      model: 'meta-llama/llama-3.3-70b-instruct:free',
+      extraHeaders: { 'HTTP-Referer': 'https://kahapro.app', 'X-Title': 'KahaPro' },
+      providerLabel: 'OpenRouter',
+    },
+    messages,
+    tools,
+  );
 }
