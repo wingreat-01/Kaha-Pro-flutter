@@ -35,6 +35,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _nameCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
+  final _nameFocus = FocusNode();
   String? _error;
   bool _loading = false;
 
@@ -159,9 +160,23 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // This screen is reached right after the owner's email sign-in
+    // (or AddSelfAsStaffScreen) -- autofocus the name field so staff
+    // can start typing straight away instead of having to tap in.
+    // Deferred a frame since the field isn't in the tree yet at
+    // initState time.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _pinCtrl.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
@@ -214,6 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _nameCtrl,
                     obscure: false,
                     hint: 'Enter your name',
+                    focusNode: _nameFocus,
                   ),
                   const SizedBox(height: 14),
                   _LabeledField(
@@ -264,6 +280,7 @@ class _LabeledField extends StatelessWidget {
   final String? hint;
   final bool numeric;
   final VoidCallback? onSubmit;
+  final FocusNode? focusNode;
   const _LabeledField({
     required this.label,
     required this.controller,
@@ -271,6 +288,7 @@ class _LabeledField extends StatelessWidget {
     this.hint,
     this.numeric = false,
     this.onSubmit,
+    this.focusNode,
   });
 
   @override
@@ -285,6 +303,7 @@ class _LabeledField extends StatelessWidget {
         const SizedBox(height: 6),
         TextField(
           controller: controller,
+          focusNode: focusNode,
           obscureText: obscure,
           keyboardType: numeric ? TextInputType.number : TextInputType.text,
           inputFormatters: numeric

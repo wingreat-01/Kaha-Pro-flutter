@@ -29,6 +29,7 @@ class AiAssistantScreen extends StatefulWidget {
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
+  final _inputFocus = FocusNode();
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _inputFocus.dispose();
     super.dispose();
   }
 
@@ -64,6 +66,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final provider = context.read<AiAssistantProvider>();
     _scrollToBottom();
     final creditsRemaining = await provider.sendMessage(text);
+    if (mounted) {
+      // Refocus once the request settles (reply or error) rather than
+      // right after clearing the field -- doing it immediately would
+      // just get stolen back by whatever else grabs focus while the
+      // request is in flight, and the field is disabled anyway if
+      // credits just ran out, so requestFocus() harmlessly no-ops there.
+      _inputFocus.requestFocus();
+    }
     if (creditsRemaining != null && mounted) {
       context.read<StoreProvider>().setAiCreditsRemaining(creditsRemaining);
       // The AI Assistant's edge function can add/update/withdraw products
@@ -163,6 +173,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     ),
                   _InputBar(
                     controller: _controller,
+                    focusNode: _inputFocus,
                     canSend: canSend,
                     isSending: chat.isSending,
                     disabledHint: store == null
@@ -216,7 +227,7 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUser = message.role == ChatRole.user;
+    final isUser = message.role == 'user';
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -233,7 +244,7 @@ class _MessageBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              message.content,
+              message.content ?? '',
               style: AppTextStyles.mono(size: 13, color: Colors.white),
             ),
             if (!isUser && message.provider != null) ...[
@@ -252,6 +263,7 @@ class _MessageBubble extends StatelessWidget {
 
 class _InputBar extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final bool canSend; // hard block: plan expired or no credits left this cycle
   final bool isSending; // soft/temporary: a request is currently in flight
   final String? disabledHint;
@@ -259,6 +271,7 @@ class _InputBar extends StatelessWidget {
 
   const _InputBar({
     required this.controller,
+    this.focusNode,
     required this.canSend,
     required this.isSending,
     required this.disabledHint,
@@ -314,6 +327,7 @@ class _InputBar extends StatelessWidget {
               },
               child: TextField(
                 controller: controller,
+                focusNode: focusNode,
                 enabled: enabled,
                 minLines: 1,
                 maxLines: 4,

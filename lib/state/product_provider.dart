@@ -57,6 +57,12 @@ class ProductProvider extends ChangeNotifier {
   String? _plan;
   String? get plan => _plan;
 
+  /// Set on 'free'-plan stores per the 15-day trial window (see
+  /// 20260814_006_add_trial_expiry.sql). Null for paid plans, or for a
+  /// free-plan store from before that migration whose backfill somehow
+  /// didn't reach it.
+  DateTime? _planExpiresAt;
+
   /// category name -> category id, needed since the DB stores
   /// products.category_id (a FK), while the rest of the app works with
   /// plain category name strings on Product.
@@ -78,10 +84,23 @@ class ProductProvider extends ChangeNotifier {
     return _products.where((p) => p.category == name).length;
   }
 
+  /// True while a 'free'-plan store is still inside its 15-day trial
+  /// window ("Free Trial" on the plan screen — everything in Pro,
+  /// including unlimited products). Mirrors the same check
+  /// enforce_product_limit() now does server-side, so this client-side
+  /// cap and the trigger's real cap never disagree.
+  bool get _isInTrial =>
+      _plan == 'free' && _planExpiresAt != null && DateTime.now().isBefore(_planExpiresAt!);
+
   /// This store's total-product cap for its current plan. Null means
-  /// either Pro (genuinely unlimited) or the plan hasn't loaded yet —
-  /// callers that need to tell those apart should check [plan] too.
-  int? get productLimit => _plan == null ? null : _productLimits[_plan];
+  /// unlimited (Pro, or a free-plan store still in its trial window)
+  /// or the plan hasn't loaded yet — callers that need to tell those
+  /// apart should check [plan] too.
+  int? get productLimit {
+    if (_plan == null) return null;
+    if (_isInTrial) return null;
+    return _productLimits[_plan];
+  }
 
   int get productCount => _products.length;
 
@@ -133,8 +152,10 @@ class ProductProvider extends ChangeNotifier {
       // session while the enforce_product_limit trigger still governs
       // actual inserts.
       try {
-        final storeRow = await _client.from('stores').select('plan').single();
+        final storeRow = await _client.from('stores').select('plan, plan_expires_at').single();
         _plan = storeRow['plan'] as String?;
+        final expiresRaw = storeRow['plan_expires_at'] as String?;
+        _planExpiresAt = expiresRaw == null ? null : DateTime.tryParse(expiresRaw);
       } catch (e) {
         debugPrint('loadFromSupabase: could not fetch store plan: $e');
       }

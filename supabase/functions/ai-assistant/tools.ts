@@ -7,14 +7,18 @@
 //            unit_label)
 //   ingredients(id, store_id, name, unit, unit_label, stock_quantity,
 //               low_stock_threshold, cost_per_unit, ...)
+//   ingredient_stock_movements(id, store_id NOT NULL, ingredient_id NOT NULL,
+//                              delta NOT NULL numeric, reason NOT NULL text,
+//                              note, staff_id, staff_name,
+//                              source NOT NULL, CHECK source in ('manual','sale'),
+//                              created_at)
 //   transactions(id, store_id, transaction_number, total,
 //                cash_tendered, change_amount, cashier_name, created_at)
 //   categories(id, name, ...) -- resolved by name via resolveCategoryId
 //
-// Still unverified (flagged inline): ingredient_stock_movements'
-// exact columns, and transaction_line_items beyond product_id/
-// quantity. get_best_sellers is written to avoid needing to guess
-// transaction_line_items' full shape -- it only relies on
+// Still unverified (flagged inline): transaction_line_items beyond
+// product_id/quantity. get_best_sellers is written to avoid needing
+// to guess transaction_line_items' full shape -- it only relies on
 // product_id + quantity existing on that table.
 
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
@@ -293,7 +297,7 @@ export async function executeTool(
 
       const { data: current, error: fetchErr } = await supabase
         .from(table)
-        .select(`id, name, ${stockCol}`)
+        .select(`id, name, store_id, ${stockCol}`)
         .eq('id', item_id)
         .single();
       if (fetchErr) return { error: fetchErr.message };
@@ -322,16 +326,23 @@ export async function executeTool(
       }
 
       if (item_type === 'ingredient') {
-        // CHECK: confirm ingredient_stock_movements' real column names before relying on this.
+        // Verified schema (Aug 18 2026): id, store_id NOT NULL,
+        // ingredient_id NOT NULL, delta NOT NULL, reason NOT NULL,
+        // note NULL, staff_id NULL, staff_name NULL, source NOT NULL,
+        // created_at. No 'quantity_change' column -- that was the bug
+        // that made every insert here fail silently (PGRST204).
         const { error: moveErr } = await supabase.from('ingredient_stock_movements').insert({
+          store_id: (current as any).store_id,
           ingredient_id: item_id,
-          quantity_change: -quantity,
-          reason: reason ?? null,
+          delta: -quantity,
+          reason: reason ?? 'Not specified',
+          source: 'manual', // CHECK constraint only allows 'manual' | 'sale' -- an AI-initiated withdrawal is a manual adjustment, not a POS sale
+          staff_name: 'AI Assistant',
         });
         if (moveErr) {
           // Stock update above already succeeded -- don't fail the whole
           // withdrawal over a logging write, but don't swallow it silently
-          // either, since this table's columns are still unverified.
+          // either.
           logToolError('withdraw_inventory (movement log)', moveErr);
         }
       }
