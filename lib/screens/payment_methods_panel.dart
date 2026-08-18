@@ -105,7 +105,7 @@ class _PaymentMethodRow extends StatelessWidget {
                       style: AppTextStyles.body(
                         size: 14,
                         weight: FontWeight.w600,
-                        color: method.isActive ? null : AppColors.textMuted,
+                        color: method.isActive ? AppColors.textPrimary : AppColors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 2),
