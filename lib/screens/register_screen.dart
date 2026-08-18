@@ -8,6 +8,7 @@ import '../state/recipe_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/category_sidebar.dart';
 import '../widgets/category_segmented_tabs.dart';
+import '../widgets/catalog_search_bar.dart';
 import '../widgets/product_card.dart';
 import '../widgets/add_product_card.dart';
 import '../widgets/add_product_dialog.dart';
@@ -36,6 +37,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   String _selectedCategory = 'All';
   bool _editMode = false;
+  String _searchQuery = '';
 
   static const double _wideBreakpoint = 700;
   static const double _sidebarWidth = 200;
@@ -52,6 +54,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // no hot restart needed.
 
   List<Product> _filtered(ProductProvider catalog) {
+    // A live search query overrides whichever category tab happens to
+    // be selected — search scans every category (including
+    // Uncategorized, unlike "All"), so a cashier searching "Kimchi"
+    // while sitting on the "Drinks" tab still finds it instead of
+    // seeing zero results and assuming the product doesn't exist.
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      return catalog.products.where((p) => p.name.toLowerCase().contains(query)).toList();
+    }
+
     // "All" excludes Uncategorized products — since there's no tab to
     // select Uncategorized directly anymore, a product that lands
     // there (e.g. its category was just deleted) is hidden from the
@@ -342,7 +354,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
-            children: [_editToggle(context)],
+            children: [
+              CatalogSearchBar(
+                // catalog.products is already the full in-memory list
+                // (same one _filtered() reads) — no separate fetch,
+                // this is a pure client-side name filter.
+                suggestions: catalog.products.map((p) => p.name).toList(),
+                onQueryChanged: (query) => setState(() => _searchQuery = query),
+              ),
+              const SizedBox(width: 4),
+              _editToggle(context),
+            ],
           ),
         ),
         Expanded(

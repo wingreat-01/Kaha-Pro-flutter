@@ -66,14 +66,22 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final provider = context.read<AiAssistantProvider>();
     _scrollToBottom();
     final creditsRemaining = await provider.sendMessage(text);
+
+    // Defer to after the frame that rebuilds the TextField with
+    // enabled: true (isSending just flipped false). Calling
+    // requestFocus() synchronously right here can land while the
+    // field's old, still-disabled build is still on screen -- and
+    // TextField ties enabled -> FocusNode.canRequestFocus, so a
+    // requestFocus() call against a not-yet-rebuilt disabled field
+    // silently no-ops. addPostFrameCallback waits for that rebuild
+    // (same trick _scrollToBottom() already uses) before asking for
+    // focus, so it actually lands once the field is enabled again.
     if (mounted) {
-      // Refocus once the request settles (reply or error) rather than
-      // right after clearing the field -- doing it immediately would
-      // just get stolen back by whatever else grabs focus while the
-      // request is in flight, and the field is disabled anyway if
-      // credits just ran out, so requestFocus() harmlessly no-ops there.
-      _inputFocus.requestFocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _inputFocus.requestFocus();
+      });
     }
+
     if (creditsRemaining != null && mounted) {
       context.read<StoreProvider>().setAiCreditsRemaining(creditsRemaining);
       // The AI Assistant's edge function can add/update/withdraw products
