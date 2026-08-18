@@ -41,6 +41,17 @@ class IngredientsPanel extends StatefulWidget {
 
   @override
   State<IngredientsPanel> createState() => _IngredientsPanelState();
+
+  static void _openEditDialog(
+    BuildContext context, {
+    required String label,
+    Ingredient? editing,
+  }) {
+    showDialog(
+      context: context,
+      builder: (_) => _EditIngredientDialog(label: label, editing: editing),
+    );
+  }
 }
 
 class _IngredientsPanelState extends State<IngredientsPanel> {
@@ -96,7 +107,7 @@ class _IngredientsPanelState extends State<IngredientsPanel> {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add $label',
-            onPressed: () => _openEditDialog(context, label: label),
+            onPressed: () => IngredientsPanel._openEditDialog(context, label: label),
           ),
           const SizedBox(width: 4),
         ],
@@ -134,17 +145,6 @@ class _IngredientsPanelState extends State<IngredientsPanel> {
                     ],
                   ),
       ),
-    );
-  }
-
-  static void _openEditDialog(
-    BuildContext context, {
-    required String label,
-    Ingredient? editing,
-  }) {
-    showDialog(
-      context: context,
-      builder: (_) => _EditIngredientDialog(label: label, editing: editing),
     );
   }
 }
