@@ -6,6 +6,7 @@ import '../state/ingredient_provider.dart';
 import '../state/store_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
+import '../widgets/catalog_search_bar.dart';
 
 /// Reasons offered on a manual stock adjustment -- see
 /// _StockAdjustDialog. Deliberately a fixed short list rather than
@@ -29,7 +30,7 @@ const List<String> kStockAdjustmentReasons = [
 /// StoreProvider.businessTypeLabel ("Ingredients" / "Supplies" /
 /// "Raw Materials", Step 0), so a hardware store sees "Supplies" here
 /// even though the class/file is still IngredientsPanel.
-class IngredientsPanel extends StatelessWidget {
+class IngredientsPanel extends StatefulWidget {
   // Logged-in staff member, for attributing manual stock adjustments
   // -- same info HomeShell already threads into RegisterScreen as
   // cashierName, just carried one level further via SettingsPanel.
@@ -39,11 +40,27 @@ class IngredientsPanel extends StatelessWidget {
   const IngredientsPanel({super.key, required this.staffId, required this.staffName});
 
   @override
+  State<IngredientsPanel> createState() => _IngredientsPanelState();
+}
+
+class _IngredientsPanelState extends State<IngredientsPanel> {
+  String _searchQuery = '';
+
+  @override
   Widget build(BuildContext context) {
     final store = context.watch<StoreProvider>();
     final ingredients = context.watch<IngredientProvider>();
     final label = store.businessTypeLabel;
     final sorted = [...ingredients.ingredients]..sort((a, b) => a.name.compareTo(b.name));
+
+    // Search filters the same sorted list the valuation summary and
+    // rows below both read from -- valuation stays scoped to whatever
+    // is currently visible, same as it would if this were a category
+    // filter instead of a name search.
+    final query = _searchQuery.trim().toLowerCase();
+    final visible = query.isEmpty
+        ? sorted
+        : sorted.where((i) => i.name.toLowerCase().contains(query)).toList();
 
     return Scaffold(
       backgroundColor: AppColors.charcoal,
@@ -55,6 +72,14 @@ class IngredientsPanel extends StatelessWidget {
           style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, letterSpacing: 1),
         ),
         actions: [
+          // suggestions come from the full unfiltered `sorted` list (not
+          // `visible`) so autocomplete keeps offering every item name
+          // regardless of what's currently matching the live query.
+          CatalogSearchBar(
+            suggestions: sorted.map((i) => i.name).toList(),
+            onQueryChanged: (value) => setState(() => _searchQuery = value),
+            hintText: 'Search $label…',
+          ),
           IconButton(
             icon: const Icon(Icons.outbox_outlined),
             tooltip: 'Withdraw stock',
@@ -63,8 +88,8 @@ class IngredientsPanel extends StatelessWidget {
               builder: (_) => _WithdrawDialog(
                 ingredients: sorted,
                 provider: ingredients,
-                staffId: staffId,
-                staffName: staffName,
+                staffId: widget.staffId,
+                staffName: widget.staffName,
               ),
             ),
           ),
@@ -84,20 +109,30 @@ class IngredientsPanel extends StatelessWidget {
                   style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
                 ),
               )
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _ValuationSummary(ingredients: sorted),
-                  for (final ingredient in sorted)
-                    _IngredientRow(
-                      ingredient: ingredient,
-                      provider: ingredients,
-                      label: label,
-                      staffId: staffId,
-                      staffName: staffName,
+            : visible.isEmpty
+                ? Center(
+                    child: Text(
+                      'No $label match "$_searchQuery".',
+                      style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
                     ),
-                ],
-              ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Valuation card hides while a search is active --
+                      // "stock value" of a partial name-match subset
+                      // reads as a misleading total, not a useful one.
+                      if (query.isEmpty) _ValuationSummary(ingredients: sorted),
+                      for (final ingredient in visible)
+                        _IngredientRow(
+                          ingredient: ingredient,
+                          provider: ingredients,
+                          label: label,
+                          staffId: widget.staffId,
+                          staffName: widget.staffName,
+                        ),
+                    ],
+                  ),
       ),
     );
   }
