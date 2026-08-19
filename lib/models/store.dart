@@ -19,6 +19,13 @@ class Store {
   // discount option must not appear anywhere in the app, not just be
   // disabled. Owner-controlled from Settings.
   final bool seniorPwdDiscountEnabled;
+  // Receipt printing feature toggle (009_receipt_printing_toggle.sql).
+  // Off by default — when false, no receipt preview/print option
+  // appears after checkout, not just a disabled button. Stage 1 of
+  // the printer feature: this gates an on-screen receipt preview;
+  // actual Bluetooth thermal printing is a planned Stage 2 that will
+  // reuse this same flag.
+  final bool receiptPrintingEnabled;
   // Store Details screen fields (007_store_details.sql) — both free
   // text, both nullable/empty until the owner fills them in. address
   // is display-only elsewhere for now; receiptFooter is meant to be
@@ -26,6 +33,12 @@ class Store {
   // reads it.
   final String? address;
   final String? receiptFooter;
+  // Receipt Details section (008_receipt_details.sql) — the business
+  // info typically printed near the top of a PH sales receipt/
+  // invoice. All nullable free text, same reasoning as address above.
+  final String? tin; // BIR Tax Identification Number
+  final String? contactNumber;
+  final String? permitNumber; // Business Permit / OR / ATP number
 
   const Store({
     required this.id,
@@ -36,8 +49,12 @@ class Store {
     this.aiCreditsRemaining = 0,
     this.aiCreditsResetAt,
     this.seniorPwdDiscountEnabled = false,
+    this.receiptPrintingEnabled = false,
     this.address,
     this.receiptFooter,
+    this.tin,
+    this.contactNumber,
+    this.permitNumber,
   });
 
   factory Store.fromRow(Map<String, dynamic> row) {
@@ -52,8 +69,12 @@ class Store {
       aiCreditsRemaining: (row['ai_credits_remaining'] as num?)?.toInt() ?? 0,
       aiCreditsResetAt: creditsResetRaw != null ? DateTime.parse(creditsResetRaw) : null,
       seniorPwdDiscountEnabled: row['senior_pwd_discount_enabled'] as bool? ?? false,
+      receiptPrintingEnabled: row['receipt_printing_enabled'] as bool? ?? false,
       address: row['address'] as String?,
       receiptFooter: row['receipt_footer'] as String?,
+      tin: row['tin'] as String?,
+      contactNumber: row['contact_number'] as String?,
+      permitNumber: row['permit_number'] as String?,
     );
   }
 
@@ -64,22 +85,29 @@ class Store {
   /// senior/PWD toggle and Store Details save, same optimistic-local-
   /// update reasoning.
   ///
-  /// name/address/receiptFooter use two extra `clear*` flags rather
-  /// than the usual `?? this.field` pattern alone — that pattern can't
+  /// The five free-text fields (name/address/receiptFooter/tin/
+  /// contactNumber/permitNumber) use `clear*` flags rather than the
+  /// usual `?? this.field` pattern alone — that pattern can't
   /// represent "clear this field to empty", which Store Details needs
-  /// (e.g. clearing a previously-set receipt footer). Callers that
-  /// don't want to change a field just omit it. Only
-  /// aiCreditsRemaining/seniorPwdDiscountEnabled keep the plain "null
-  /// means unchanged" behavior, since nothing ever needs to null those
-  /// back out.
+  /// (e.g. clearing a previously-set TIN). Callers that don't want to
+  /// change a field just omit it. Only aiCreditsRemaining/
+  /// seniorPwdDiscountEnabled keep the plain "null means unchanged"
+  /// behavior, since nothing ever needs to null those back out.
   Store copyWith({
     String? name,
     String? address,
     String? receiptFooter,
+    String? tin,
+    String? contactNumber,
+    String? permitNumber,
     int? aiCreditsRemaining,
     bool? seniorPwdDiscountEnabled,
+    bool? receiptPrintingEnabled,
     bool clearAddress = false,
     bool clearReceiptFooter = false,
+    bool clearTin = false,
+    bool clearContactNumber = false,
+    bool clearPermitNumber = false,
   }) =>
       Store(
         id: id,
@@ -90,8 +118,12 @@ class Store {
         aiCreditsRemaining: aiCreditsRemaining ?? this.aiCreditsRemaining,
         aiCreditsResetAt: aiCreditsResetAt,
         seniorPwdDiscountEnabled: seniorPwdDiscountEnabled ?? this.seniorPwdDiscountEnabled,
+        receiptPrintingEnabled: receiptPrintingEnabled ?? this.receiptPrintingEnabled,
         address: clearAddress ? null : (address ?? this.address),
         receiptFooter: clearReceiptFooter ? null : (receiptFooter ?? this.receiptFooter),
+        tin: clearTin ? null : (tin ?? this.tin),
+        contactNumber: clearContactNumber ? null : (contactNumber ?? this.contactNumber),
+        permitNumber: clearPermitNumber ? null : (permitNumber ?? this.permitNumber),
       );
 
   /// True when the trial-expired banner/lock should show. Two paths:

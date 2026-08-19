@@ -10,6 +10,7 @@ import '../state/recipe_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
 import 'led_total.dart';
+import 'receipt_preview_screen.dart';
 
 /// Result of the checkout flow. A queued sale still counts as
 /// success from the cashier's point of view (cart cleared, stock
@@ -272,6 +273,24 @@ class _CheckoutModalState extends State<CheckoutModal> {
       }
 
       widget.cart.clear();
+
+      // Receipt preview — gated on the store's Receipt Printing
+      // toggle (Settings), same store-flag-controls-visibility pattern
+      // as the discount section above. Read via context.read (not
+      // watch, this isn't build()) since this only needs the current
+      // value at the moment checkout completes, not to rebuild on
+      // change. Shown before popping the checkout dialog itself, so
+      // closing the receipt naturally returns the caller to wherever
+      // checkout was opened from.
+      final receiptPrintingEnabled = context.read<StoreProvider>().receiptPrintingEnabled;
+      if (receiptPrintingEnabled && mounted) {
+        final store = context.read<StoreProvider>().store;
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ReceiptPreviewScreen(transaction: result, store: store)),
+        );
+      }
+
+      if (!mounted) return;
       Navigator.of(context).pop(
         result.isPending ? CheckoutResult.completedQueued : CheckoutResult.completedSynced,
       );

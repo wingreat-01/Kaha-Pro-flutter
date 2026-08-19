@@ -6,7 +6,8 @@ import '../models/store.dart';
 /// Inventory screen's label), plan/trial state (Settings, Upgrade
 /// screen), AI Assistant credit balance (AI Assistant tab), the
 /// Senior/PWD discount feature toggle (Settings, Checkout modal), and
-/// Store Details fields (name/address/receipt footer).
+/// Store Details / Receipt Details fields (name/address/receipt
+/// footer/TIN/contact number/permit number).
 ///
 /// Load pattern matches ProductProvider/UserProvider: fetch-once-on-
 /// login, not realtime. Call [loadFromSupabase] right after a
@@ -49,6 +50,11 @@ class StoreProvider extends ChangeNotifier {
   /// arrives, so this defaults closed, not open.
   bool get seniorPwdDiscountEnabled => _store?.seniorPwdDiscountEnabled ?? false;
 
+  /// Same defaults-closed reasoning as seniorPwdDiscountEnabled above —
+  /// no receipt preview should flash into view before the real
+  /// (likely-off) value has loaded.
+  bool get receiptPrintingEnabled => _store?.receiptPrintingEnabled ?? false;
+
   Future<void> loadFromSupabase() async {
     isLoading = true;
     loadError = null;
@@ -60,7 +66,8 @@ class StoreProvider extends ChangeNotifier {
           .select(
             'id, name, business_type, plan, plan_expires_at, '
             'ai_credits_remaining, ai_credits_reset_at, '
-            'senior_pwd_discount_enabled, address, receipt_footer',
+            'senior_pwd_discount_enabled, receipt_printing_enabled, '
+            'address, receipt_footer, tin, contact_number, permit_number',
           )
           .single();
       _store = Store.fromRow(row);
@@ -111,23 +118,49 @@ class StoreProvider extends ChangeNotifier {
     }
   }
 
-  /// Saves the Store Details form (name/address/receipt footer). Not
-  /// optimistic like the toggle above — this is a multi-field form
+  /// Flips the receipt printing toggle in Settings. Same optimistic-
+  /// update-then-persist-then-rollback-on-failure shape as
+  /// setSeniorPwdDiscountEnabled above.
+  Future<void> setReceiptPrintingEnabled(bool value) async {
+    final current = _store;
+    if (current == null) return;
+
+    _store = current.copyWith(receiptPrintingEnabled: value);
+    notifyListeners();
+
+    try {
+      await _client
+          .from('stores')
+          .update({'receipt_printing_enabled': value})
+          .eq('id', current.id);
+    } catch (e) {
+      _store = current; // revert
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Saves the Store Details form — name/address/receipt footer plus
+  /// the Receipt Details section (TIN/contact number/permit number).
+  /// Not optimistic like the toggle above — this is a multi-field form
   /// with a real Save button, so the screen already has a natural
   /// loading state to show while this is in flight; better to only
   /// update local state once the write actually succeeds than to
-  /// flash a save and then have to roll three fields back at once on
+  /// flash a save and then have to roll six fields back at once on
   /// failure.
   ///
-  /// [address]/[receiptFooter] passed as null mean "clear this field",
-  /// not "leave unchanged" — the caller (StoreDetailsPanel) always
-  /// sends the current text field contents, including empty strings
+  /// Every nullable param passed as null means "clear this field", not
+  /// "leave unchanged" — the caller (StoreDetailsPanel) always sends
+  /// the current text field contents, including empty strings
   /// converted to null, so this always reflects exactly what's on
   /// screen when Save is tapped.
   Future<void> updateStoreDetails({
     required String name,
     String? address,
     String? receiptFooter,
+    String? tin,
+    String? contactNumber,
+    String? permitNumber,
   }) async {
     final current = _store;
     if (current == null) return;
@@ -136,14 +169,23 @@ class StoreProvider extends ChangeNotifier {
       'name': name,
       'address': address,
       'receipt_footer': receiptFooter,
+      'tin': tin,
+      'contact_number': contactNumber,
+      'permit_number': permitNumber,
     }).eq('id', current.id);
 
     _store = current.copyWith(
       name: name,
       address: address,
       receiptFooter: receiptFooter,
+      tin: tin,
+      contactNumber: contactNumber,
+      permitNumber: permitNumber,
       clearAddress: address == null,
       clearReceiptFooter: receiptFooter == null,
+      clearTin: tin == null,
+      clearContactNumber: contactNumber == null,
+      clearPermitNumber: permitNumber == null,
     );
     notifyListeners();
   }

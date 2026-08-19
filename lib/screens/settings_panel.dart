@@ -43,6 +43,17 @@ class SettingsPanel extends StatelessWidget {
     }
   }
 
+  Future<void> _toggleReceiptPrinting(BuildContext context, bool value) async {
+    try {
+      await context.read<StoreProvider>().setReceiptPrintingEnabled(value);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save — check your connection and try again.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final storeProvider = context.watch<StoreProvider>();
@@ -87,6 +98,15 @@ class SettingsPanel extends StatelessWidget {
               : 'Disabled — hidden from checkout',
           value: storeProvider.seniorPwdDiscountEnabled,
           onChanged: (value) => _toggleSeniorPwdDiscount(context, value),
+        ),
+        _ToggleSettingsRow(
+          icon: Icons.print_outlined,
+          label: 'Receipt Printing',
+          subtitle: storeProvider.receiptPrintingEnabled
+              ? 'Enabled — receipt shown after checkout'
+              : 'Disabled — no receipt after checkout',
+          value: storeProvider.receiptPrintingEnabled,
+          onChanged: (value) => _toggleReceiptPrinting(context, value),
         ),
         _SettingsRow(
           icon: Icons.inventory_2_outlined,

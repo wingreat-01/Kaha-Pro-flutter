@@ -4,11 +4,17 @@ import '../state/store_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
 
-/// Store Details screen — reached from Settings > Store details. Edits
-/// the store's name, address, and receipt footer message (the last
-/// printed/shown at the bottom of a receipt once receipt rendering
-/// reads it). All three live on the `stores` row itself (see
-/// 007_store_details.sql), same as business_type/plan.
+/// Store Details screen — reached from Settings > Store details. Two
+/// sections:
+///  - Store info: name, address, receipt footer message
+///  - Receipt details: TIN, contact number, permit/OR number — the
+///    business info typically printed near the top of a PH sales
+///    receipt/invoice, kept as its own labeled section since it's a
+///    different kind of information (compliance/registration data)
+///    from the general store info above it.
+/// All six fields live on the `stores` row itself (see
+/// 007_store_details.sql and 008_receipt_details.sql), same as
+/// business_type/plan.
 class StoreDetailsPanel extends StatefulWidget {
   const StoreDetailsPanel({super.key});
 
@@ -20,6 +26,9 @@ class _StoreDetailsPanelState extends State<StoreDetailsPanel> {
   late final TextEditingController _nameController;
   late final TextEditingController _addressController;
   late final TextEditingController _footerController;
+  late final TextEditingController _tinController;
+  late final TextEditingController _contactController;
+  late final TextEditingController _permitController;
   bool _saving = false;
   String? _error;
 
@@ -30,6 +39,9 @@ class _StoreDetailsPanelState extends State<StoreDetailsPanel> {
     _nameController = TextEditingController(text: store?.name ?? '');
     _addressController = TextEditingController(text: store?.address ?? '');
     _footerController = TextEditingController(text: store?.receiptFooter ?? '');
+    _tinController = TextEditingController(text: store?.tin ?? '');
+    _contactController = TextEditingController(text: store?.contactNumber ?? '');
+    _permitController = TextEditingController(text: store?.permitNumber ?? '');
   }
 
   @override
@@ -37,6 +49,9 @@ class _StoreDetailsPanelState extends State<StoreDetailsPanel> {
     _nameController.dispose();
     _addressController.dispose();
     _footerController.dispose();
+    _tinController.dispose();
+    _contactController.dispose();
+    _permitController.dispose();
     super.dispose();
   }
 
@@ -54,16 +69,22 @@ class _StoreDetailsPanelState extends State<StoreDetailsPanel> {
 
     // Empty text fields are saved as null (cleared), not as empty
     // strings — keeps "never set" and "set then cleared" both reading
-    // the same way everywhere else that checks store.address /
-    // store.receiptFooter for null.
-    final address = _addressController.text.trim();
-    final footer = _footerController.text.trim();
+    // the same way everywhere else that checks these store fields for
+    // null (e.g. a receipt template deciding whether to print a TIN
+    // line at all).
+    String? orNull(TextEditingController c) {
+      final trimmed = c.text.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
 
     try {
       await context.read<StoreProvider>().updateStoreDetails(
             name: name,
-            address: address.isEmpty ? null : address,
-            receiptFooter: footer.isEmpty ? null : footer,
+            address: orNull(_addressController),
+            receiptFooter: orNull(_footerController),
+            tin: orNull(_tinController),
+            contactNumber: orNull(_contactController),
+            permitNumber: orNull(_permitController),
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -117,6 +138,49 @@ class _StoreDetailsPanelState extends State<StoreDetailsPanel> {
               maxLines: 3,
               decoration: const InputDecoration(hintText: 'e.g. Thank you for shopping with us!'),
             ),
+            const SizedBox(height: 28),
+            _SectionDivider(),
+            const SizedBox(height: 16),
+            Text(
+              'RECEIPT DETAILS',
+              style: AppTextStyles.mono(size: 11, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 2),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Business info printed at the top of your receipts.',
+              style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 14),
+            _FieldLabel('TIN'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _tinController,
+              style: AppTextStyles.body(size: 14),
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(hintText: 'e.g. 000-000-000-000'),
+            ),
+            const SizedBox(height: 20),
+            _FieldLabel('CONTACT NUMBER'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _contactController,
+              style: AppTextStyles.body(size: 14),
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(hintText: 'e.g. 0917 000 0000'),
+            ),
+            const SizedBox(height: 20),
+            _FieldLabel('PERMIT / OR NUMBER'),
+            const SizedBox(height: 4),
+            Text(
+              'Business Permit, Authority to Print, or OR number.',
+              style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _permitController,
+              style: AppTextStyles.body(size: 14),
+              decoration: const InputDecoration(hintText: 'e.g. ATP No. 000AU0000000'),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 14),
               Text(
@@ -159,5 +223,12 @@ class _FieldLabel extends StatelessWidget {
       label,
       style: AppTextStyles.mono(size: 11, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.5),
     );
+  }
+}
+
+class _SectionDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(height: 1, color: AppColors.slateBorder);
   }
 }
