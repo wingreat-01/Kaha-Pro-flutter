@@ -19,6 +19,13 @@ class Store {
   // discount option must not appear anywhere in the app, not just be
   // disabled. Owner-controlled from Settings.
   final bool seniorPwdDiscountEnabled;
+  // Store Details screen fields (007_store_details.sql) — both free
+  // text, both nullable/empty until the owner fills them in. address
+  // is display-only elsewhere for now; receiptFooter is meant to be
+  // printed/shown at the bottom of a receipt once receipt rendering
+  // reads it.
+  final String? address;
+  final String? receiptFooter;
 
   const Store({
     required this.id,
@@ -29,6 +36,8 @@ class Store {
     this.aiCreditsRemaining = 0,
     this.aiCreditsResetAt,
     this.seniorPwdDiscountEnabled = false,
+    this.address,
+    this.receiptFooter,
   });
 
   factory Store.fromRow(Map<String, dynamic> row) {
@@ -43,6 +52,8 @@ class Store {
       aiCreditsRemaining: (row['ai_credits_remaining'] as num?)?.toInt() ?? 0,
       aiCreditsResetAt: creditsResetRaw != null ? DateTime.parse(creditsResetRaw) : null,
       seniorPwdDiscountEnabled: row['senior_pwd_discount_enabled'] as bool? ?? false,
+      address: row['address'] as String?,
+      receiptFooter: row['receipt_footer'] as String?,
     );
   }
 
@@ -50,20 +61,37 @@ class Store {
   /// AI Assistant reply (see StoreProvider.decrementAiCredit) -- avoids
   /// an extra round trip just to refresh a number the edge function
   /// already updated server-side. Also used by StoreProvider's
-  /// senior/PWD toggle, same optimistic-local-update reasoning.
+  /// senior/PWD toggle and Store Details save, same optimistic-local-
+  /// update reasoning.
+  ///
+  /// name/address/receiptFooter use two extra `clear*` flags rather
+  /// than the usual `?? this.field` pattern alone — that pattern can't
+  /// represent "clear this field to empty", which Store Details needs
+  /// (e.g. clearing a previously-set receipt footer). Callers that
+  /// don't want to change a field just omit it. Only
+  /// aiCreditsRemaining/seniorPwdDiscountEnabled keep the plain "null
+  /// means unchanged" behavior, since nothing ever needs to null those
+  /// back out.
   Store copyWith({
+    String? name,
+    String? address,
+    String? receiptFooter,
     int? aiCreditsRemaining,
     bool? seniorPwdDiscountEnabled,
+    bool clearAddress = false,
+    bool clearReceiptFooter = false,
   }) =>
       Store(
         id: id,
-        name: name,
+        name: name ?? this.name,
         businessType: businessType,
         plan: plan,
         planExpiresAt: planExpiresAt,
         aiCreditsRemaining: aiCreditsRemaining ?? this.aiCreditsRemaining,
         aiCreditsResetAt: aiCreditsResetAt,
         seniorPwdDiscountEnabled: seniorPwdDiscountEnabled ?? this.seniorPwdDiscountEnabled,
+        address: clearAddress ? null : (address ?? this.address),
+        receiptFooter: clearReceiptFooter ? null : (receiptFooter ?? this.receiptFooter),
       );
 
   /// True when the trial-expired banner/lock should show. Two paths:

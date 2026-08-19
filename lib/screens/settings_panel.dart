@@ -11,6 +11,7 @@ import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
 import '../models/store.dart';
 import 'upgrade_screen.dart';
+import 'store_details_panel.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -117,10 +118,13 @@ class SettingsPanel extends StatelessWidget {
             MaterialPageRoute(builder: (_) => const UpgradeScreen()),
           ),
         ),
-        const _SettingsRow(
+        _SettingsRow(
           icon: Icons.storefront_outlined,
           label: 'Store details',
           subtitle: 'Name, address, receipt footer',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const StoreDetailsPanel()),
+          ),
         ),
         const _SettingsRow(
           icon: Icons.info_outline,

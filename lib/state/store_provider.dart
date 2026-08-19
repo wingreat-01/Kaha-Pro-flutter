@@ -4,17 +4,19 @@ import '../models/store.dart';
 
 /// The signed-in owner's store record -- business_type (drives the
 /// Inventory screen's label), plan/trial state (Settings, Upgrade
-/// screen), AI Assistant credit balance (AI Assistant tab), and the
-/// Senior/PWD discount feature toggle (Settings, Checkout modal).
+/// screen), AI Assistant credit balance (AI Assistant tab), the
+/// Senior/PWD discount feature toggle (Settings, Checkout modal), and
+/// Store Details fields (name/address/receipt footer).
 ///
 /// Load pattern matches ProductProvider/UserProvider: fetch-once-on-
 /// login, not realtime. Call [loadFromSupabase] right after a
 /// successful sign-in and before showing HomeShell; nothing
 /// auto-refreshes after that until the next login, except
-/// [setAiCreditsRemaining] (called after every AI Assistant reply) and
+/// [setAiCreditsRemaining] (called after every AI Assistant reply),
 /// [setSeniorPwdDiscountEnabled] (called when the owner flips the
-/// Settings toggle) which both update the in-memory store immediately
-/// so the UI never waits on a full reload.
+/// Settings toggle), and [updateStoreDetails] (called on Save from the
+/// Store Details screen) which all update the in-memory store
+/// immediately so the UI never waits on a full reload.
 ///
 /// RLS scopes the `stores` row to the caller automatically (same
 /// current_store_id()-based policy as categories/products/staff_users),
@@ -58,7 +60,7 @@ class StoreProvider extends ChangeNotifier {
           .select(
             'id, name, business_type, plan, plan_expires_at, '
             'ai_credits_remaining, ai_credits_reset_at, '
-            'senior_pwd_discount_enabled',
+            'senior_pwd_discount_enabled, address, receipt_footer',
           )
           .single();
       _store = Store.fromRow(row);
@@ -107,5 +109,42 @@ class StoreProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Saves the Store Details form (name/address/receipt footer). Not
+  /// optimistic like the toggle above — this is a multi-field form
+  /// with a real Save button, so the screen already has a natural
+  /// loading state to show while this is in flight; better to only
+  /// update local state once the write actually succeeds than to
+  /// flash a save and then have to roll three fields back at once on
+  /// failure.
+  ///
+  /// [address]/[receiptFooter] passed as null mean "clear this field",
+  /// not "leave unchanged" — the caller (StoreDetailsPanel) always
+  /// sends the current text field contents, including empty strings
+  /// converted to null, so this always reflects exactly what's on
+  /// screen when Save is tapped.
+  Future<void> updateStoreDetails({
+    required String name,
+    String? address,
+    String? receiptFooter,
+  }) async {
+    final current = _store;
+    if (current == null) return;
+
+    await _client.from('stores').update({
+      'name': name,
+      'address': address,
+      'receipt_footer': receiptFooter,
+    }).eq('id', current.id);
+
+    _store = current.copyWith(
+      name: name,
+      address: address,
+      receiptFooter: receiptFooter,
+      clearAddress: address == null,
+      clearReceiptFooter: receiptFooter == null,
+    );
+    notifyListeners();
   }
 }
