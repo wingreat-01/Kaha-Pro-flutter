@@ -56,11 +56,20 @@ class Transaction {
   final String transactionNumber;
   final DateTime timestamp;
   final List<TransactionLineItem> items;
-  final double total;
+  final double total; // the amount actually collected — already net of
+                       // any Senior/PWD discount (see discountAmount)
   final double cashTendered;
   final double change;
   final String? paymentMethodId; // FK snapshot — null on rows recorded before this feature
   final String? paymentMethodName; // display snapshot, since a method can be renamed/deleted later
+  // Senior Citizen / PWD discount (RA 9994 / RA 10754) snapshot — null
+  // discountType means no discount was applied to this sale. All null/
+  // zero on rows recorded before this feature existed.
+  final String? discountType; // 'senior' | 'pwd' | null
+  final String? discountHolderName;
+  final String? discountIdNumber;
+  final double discountAmount; // 20% discount amount, already subtracted from `total`
+  final double vatExemptAmount; // VAT portion removed from the gross price, informational
 
   const Transaction({
     this.id,
@@ -74,11 +83,18 @@ class Transaction {
     required this.change,
     this.paymentMethodId,
     this.paymentMethodName,
+    this.discountType,
+    this.discountHolderName,
+    this.discountIdNumber,
+    this.discountAmount = 0,
+    this.vatExemptAmount = 0,
   });
 
   /// True for a sale that's been recorded locally (queued while
   /// offline) but hasn't reached Supabase yet.
   bool get isPending => id == null;
+
+  bool get hasDiscount => discountType != null;
 
   int get itemCount => items.fold(0, (sum, item) => sum + item.quantity);
 }

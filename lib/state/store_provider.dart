@@ -4,16 +4,17 @@ import '../models/store.dart';
 
 /// The signed-in owner's store record -- business_type (drives the
 /// Inventory screen's label), plan/trial state (Settings, Upgrade
-/// screen), and AI Assistant credit balance (AI Assistant tab).
+/// screen), AI Assistant credit balance (AI Assistant tab), and the
+/// Senior/PWD discount feature toggle (Settings, Checkout modal).
 ///
 /// Load pattern matches ProductProvider/UserProvider: fetch-once-on-
 /// login, not realtime. Call [loadFromSupabase] right after a
 /// successful sign-in and before showing HomeShell; nothing
 /// auto-refreshes after that until the next login, except
-/// [setAiCreditsRemaining] which is called with the server's real
-/// count after every AI Assistant reply (see
-/// AiAssistantProvider.sendMessage) so the header credit count stays
-/// accurate without trusting a local guess.
+/// [setAiCreditsRemaining] (called after every AI Assistant reply) and
+/// [setSeniorPwdDiscountEnabled] (called when the owner flips the
+/// Settings toggle) which both update the in-memory store immediately
+/// so the UI never waits on a full reload.
 ///
 /// RLS scopes the `stores` row to the caller automatically (same
 /// current_store_id()-based policy as categories/products/staff_users),
@@ -40,6 +41,12 @@ class StoreProvider extends ChangeNotifier {
   /// see Store.isExpired.
   bool get isExpired => _store?.isExpired ?? false;
 
+  /// False until the store has loaded, matching every other flag on
+  /// this provider — a slow/failed load must never make the discount
+  /// option flash into view before the real (likely-off) value
+  /// arrives, so this defaults closed, not open.
+  bool get seniorPwdDiscountEnabled => _store?.seniorPwdDiscountEnabled ?? false;
+
   Future<void> loadFromSupabase() async {
     isLoading = true;
     loadError = null;
@@ -50,7 +57,8 @@ class StoreProvider extends ChangeNotifier {
           .from('stores')
           .select(
             'id, name, business_type, plan, plan_expires_at, '
-            'ai_credits_remaining, ai_credits_reset_at',
+            'ai_credits_remaining, ai_credits_reset_at, '
+            'senior_pwd_discount_enabled',
           )
           .single();
       _store = Store.fromRow(row);
@@ -74,5 +82,30 @@ class StoreProvider extends ChangeNotifier {
     if (_store == null) return;
     _store = _store!.copyWith(aiCreditsRemaining: value < 0 ? 0 : value);
     notifyListeners();
+  }
+
+  /// Flips the Senior/PWD discount toggle in Settings. Updates the UI
+  /// immediately (optimistic — the toggle should feel instant, same
+  /// as any other Switch), then persists to Supabase. On failure, the
+  /// local value is rolled back and the error rethrown so the Settings
+  /// screen can show it — silently drifting from what's actually
+  /// saved would be worse than a visible revert here.
+  Future<void> setSeniorPwdDiscountEnabled(bool value) async {
+    final current = _store;
+    if (current == null) return;
+
+    _store = current.copyWith(seniorPwdDiscountEnabled: value);
+    notifyListeners();
+
+    try {
+      await _client
+          .from('stores')
+          .update({'senior_pwd_discount_enabled': value})
+          .eq('id', current.id);
+    } catch (e) {
+      _store = current; // revert
+      notifyListeners();
+      rethrow;
+    }
   }
 }

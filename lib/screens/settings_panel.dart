@@ -31,6 +31,17 @@ class SettingsPanel extends StatelessWidget {
 
   const SettingsPanel({super.key, required this.staffId, required this.staffName});
 
+  Future<void> _toggleSeniorPwdDiscount(BuildContext context, bool value) async {
+    try {
+      await context.read<StoreProvider>().setSeniorPwdDiscountEnabled(value);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save — check your connection and try again.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final storeProvider = context.watch<StoreProvider>();
@@ -66,6 +77,15 @@ class SettingsPanel extends StatelessWidget {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const PaymentMethodsPanel()),
           ),
+        ),
+        _ToggleSettingsRow(
+          icon: Icons.accessible_outlined,
+          label: 'Senior / PWD Discount',
+          subtitle: storeProvider.seniorPwdDiscountEnabled
+              ? 'Enabled — visible at checkout'
+              : 'Disabled — hidden from checkout',
+          value: storeProvider.seniorPwdDiscountEnabled,
+          onChanged: (value) => _toggleSeniorPwdDiscount(context, value),
         ),
         _SettingsRow(
           icon: Icons.inventory_2_outlined,
@@ -239,6 +259,74 @@ class _SettingsRow extends StatelessWidget {
               Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Same card shell as _SettingsRow, but for a row that's a direct
+/// on/off setting rather than a navigation link — a trailing Switch
+/// instead of a chevron, no onTap/InkWell on the whole row (so an
+/// accidental tap on the label doesn't flip the switch).
+class _ToggleSettingsRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _ToggleSettingsRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: AppColors.slate,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.slateBorder, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.slateField,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.slateBorder, width: 1),
+              ),
+              child: Icon(icon, size: 18, color: AppColors.ledAmber),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: AppColors.tillGreen,
+            ),
+          ],
         ),
       ),
     );

@@ -188,6 +188,11 @@ class TransactionProvider extends ChangeNotifier {
       change: pending.change,
       paymentMethodId: pending.paymentMethodId,
       paymentMethodName: pending.paymentMethodName,
+      discountType: pending.discountType,
+      discountHolderName: pending.discountHolderName,
+      discountIdNumber: pending.discountIdNumber,
+      discountAmount: pending.discountAmount,
+      vatExemptAmount: pending.vatExemptAmount,
     );
   }
 
@@ -209,6 +214,12 @@ class TransactionProvider extends ChangeNotifier {
   /// Records a completed sale. Call this with the cart's items BEFORE
   /// clearing the cart, so quantities are still intact.
   ///
+  /// [total] is the amount actually collected — already net of any
+  /// Senior/PWD discount (the caller, CheckoutModal, computes the
+  /// discounted total before calling this). [discountAmount]/
+  /// [vatExemptAmount] are kept separately as a compliance snapshot
+  /// even though they're already reflected in [total].
+  ///
   /// Async — this hits Supabase (record_transaction RPC). If that
   /// fails for what looks like a connectivity reason, the sale is
   /// queued locally instead of being lost — the caller still gets
@@ -225,6 +236,11 @@ class TransactionProvider extends ChangeNotifier {
     String? cashierName,
     String? paymentMethodId,
     String? paymentMethodName,
+    String? discountType,
+    String? discountHolderName,
+    String? discountIdNumber,
+    double discountAmount = 0,
+    double vatExemptAmount = 0,
   }) async {
     final lineItems = cartItems.map(TransactionLineItem.fromCartItem).toList();
 
@@ -236,6 +252,11 @@ class TransactionProvider extends ChangeNotifier {
         'p_cashier_name': cashierName,
         'p_items': _itemsJson(lineItems),
         'p_payment_method_id': paymentMethodId,
+        'p_discount_type': discountType,
+        'p_discount_holder_name': discountHolderName,
+        'p_discount_id_number': discountIdNumber,
+        'p_discount_amount': discountAmount,
+        'p_vat_exempt_amount': vatExemptAmount,
       }).single();
 
       final transaction = Transaction(
@@ -254,6 +275,11 @@ class TransactionProvider extends ChangeNotifier {
         // PaymentMethodProvider) rather than leaving it null for the
         // rest of this session.
         paymentMethodName: paymentMethodName,
+        discountType: discountType,
+        discountHolderName: discountHolderName,
+        discountIdNumber: discountIdNumber,
+        discountAmount: discountAmount,
+        vatExemptAmount: vatExemptAmount,
       );
 
       _transactions.add(transaction);
@@ -269,6 +295,11 @@ class TransactionProvider extends ChangeNotifier {
           cashierName: cashierName,
           paymentMethodId: paymentMethodId,
           paymentMethodName: paymentMethodName,
+          discountType: discountType,
+          discountHolderName: discountHolderName,
+          discountIdNumber: discountIdNumber,
+          discountAmount: discountAmount,
+          vatExemptAmount: vatExemptAmount,
         );
       }
       rethrow;
@@ -303,6 +334,11 @@ class TransactionProvider extends ChangeNotifier {
     String? cashierName,
     String? paymentMethodId,
     String? paymentMethodName,
+    String? discountType,
+    String? discountHolderName,
+    String? discountIdNumber,
+    double discountAmount = 0,
+    double vatExemptAmount = 0,
   }) {
     final pending = PendingSale(
       localId: 'local-${DateTime.now().microsecondsSinceEpoch}',
@@ -314,6 +350,11 @@ class TransactionProvider extends ChangeNotifier {
       queuedAt: DateTime.now(),
       paymentMethodId: paymentMethodId,
       paymentMethodName: paymentMethodName,
+      discountType: discountType,
+      discountHolderName: discountHolderName,
+      discountIdNumber: discountIdNumber,
+      discountAmount: discountAmount,
+      vatExemptAmount: vatExemptAmount,
     );
     _pendingQueue.add(pending);
     unawaited(_savePendingToDisk());
@@ -346,6 +387,11 @@ class TransactionProvider extends ChangeNotifier {
           'p_cashier_name': pending.cashierName,
           'p_items': _itemsJson(pending.items),
           'p_payment_method_id': pending.paymentMethodId,
+          'p_discount_type': pending.discountType,
+          'p_discount_holder_name': pending.discountHolderName,
+          'p_discount_id_number': pending.discountIdNumber,
+          'p_discount_amount': pending.discountAmount,
+          'p_vat_exempt_amount': pending.vatExemptAmount,
         }).single();
 
         final synced = Transaction(
@@ -359,6 +405,11 @@ class TransactionProvider extends ChangeNotifier {
           change: pending.change,
           paymentMethodId: row['payment_method_id'] as String?,
           paymentMethodName: pending.paymentMethodName,
+          discountType: pending.discountType,
+          discountHolderName: pending.discountHolderName,
+          discountIdNumber: pending.discountIdNumber,
+          discountAmount: pending.discountAmount,
+          vatExemptAmount: pending.vatExemptAmount,
         );
 
         // Swap the PENDING placeholder for the now-real synced row.
@@ -441,6 +492,11 @@ class TransactionProvider extends ChangeNotifier {
       // nullable, no ON DELETE restriction assumed) or on rows
       // recorded before this feature existed.
       paymentMethodName: (row['payment_methods'] as Map<String, dynamic>?)?['name'] as String?,
+      discountType: row['discount_type'] as String?,
+      discountHolderName: row['discount_holder_name'] as String?,
+      discountIdNumber: row['discount_id_number'] as String?,
+      discountAmount: (row['discount_amount'] as num?)?.toDouble() ?? 0,
+      vatExemptAmount: (row['vat_exempt_amount'] as num?)?.toDouble() ?? 0,
     );
   }
 }

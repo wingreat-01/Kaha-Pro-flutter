@@ -17,6 +17,11 @@ class PendingSale {
   final DateTime queuedAt;
   final String? paymentMethodId;
   final String? paymentMethodName;
+  final String? discountType;
+  final String? discountHolderName;
+  final String? discountIdNumber;
+  final double discountAmount;
+  final double vatExemptAmount;
 
   const PendingSale({
     required this.localId,
@@ -28,6 +33,11 @@ class PendingSale {
     required this.queuedAt,
     this.paymentMethodId,
     this.paymentMethodName,
+    this.discountType,
+    this.discountHolderName,
+    this.discountIdNumber,
+    this.discountAmount = 0,
+    this.vatExemptAmount = 0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +60,11 @@ class PendingSale {
         'queuedAt': queuedAt.toIso8601String(),
         'paymentMethodId': paymentMethodId,
         'paymentMethodName': paymentMethodName,
+        'discountType': discountType,
+        'discountHolderName': discountHolderName,
+        'discountIdNumber': discountIdNumber,
+        'discountAmount': discountAmount,
+        'vatExemptAmount': vatExemptAmount,
       };
 
   factory PendingSale.fromJson(Map<String, dynamic> json) => PendingSale(
@@ -71,10 +86,15 @@ class PendingSale {
             .toList(),
         queuedAt: DateTime.parse(json['queuedAt'] as String),
         // Absent on any queue entry persisted before this feature —
-        // decode as null rather than throwing, same as cashierName's
-        // existing nullable treatment above.
+        // decode as null/zero rather than throwing, same as
+        // cashierName's existing nullable treatment above.
         paymentMethodId: json['paymentMethodId'] as String?,
         paymentMethodName: json['paymentMethodName'] as String?,
+        discountType: json['discountType'] as String?,
+        discountHolderName: json['discountHolderName'] as String?,
+        discountIdNumber: json['discountIdNumber'] as String?,
+        discountAmount: (json['discountAmount'] as num?)?.toDouble() ?? 0,
+        vatExemptAmount: (json['vatExemptAmount'] as num?)?.toDouble() ?? 0,
       );
 
   /// Whole-queue helpers, so TransactionProvider only ever does one

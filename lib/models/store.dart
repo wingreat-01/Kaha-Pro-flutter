@@ -14,6 +14,11 @@ class Store {
                           // plans or a store this trigger hasn't touched.
   final int aiCreditsRemaining; // this cycle's remaining AI Assistant credits
   final DateTime? aiCreditsResetAt; // when the monthly credit count next resets
+  // Senior Citizen / PWD discount (RA 9994 / RA 10754) feature toggle.
+  // Off by default (see 005_senior_pwd_discount.sql) — when false, the
+  // discount option must not appear anywhere in the app, not just be
+  // disabled. Owner-controlled from Settings.
+  final bool seniorPwdDiscountEnabled;
 
   const Store({
     required this.id,
@@ -23,6 +28,7 @@ class Store {
     this.planExpiresAt,
     this.aiCreditsRemaining = 0,
     this.aiCreditsResetAt,
+    this.seniorPwdDiscountEnabled = false,
   });
 
   factory Store.fromRow(Map<String, dynamic> row) {
@@ -36,14 +42,20 @@ class Store {
       planExpiresAt: expiresRaw != null ? DateTime.parse(expiresRaw) : null,
       aiCreditsRemaining: (row['ai_credits_remaining'] as num?)?.toInt() ?? 0,
       aiCreditsResetAt: creditsResetRaw != null ? DateTime.parse(creditsResetRaw) : null,
+      seniorPwdDiscountEnabled: row['senior_pwd_discount_enabled'] as bool? ?? false,
     );
   }
 
   /// Used for the optimistic local decrement right after a successful
   /// AI Assistant reply (see StoreProvider.decrementAiCredit) -- avoids
   /// an extra round trip just to refresh a number the edge function
-  /// already updated server-side.
-  Store copyWith({int? aiCreditsRemaining}) => Store(
+  /// already updated server-side. Also used by StoreProvider's
+  /// senior/PWD toggle, same optimistic-local-update reasoning.
+  Store copyWith({
+    int? aiCreditsRemaining,
+    bool? seniorPwdDiscountEnabled,
+  }) =>
+      Store(
         id: id,
         name: name,
         businessType: businessType,
@@ -51,6 +63,7 @@ class Store {
         planExpiresAt: planExpiresAt,
         aiCreditsRemaining: aiCreditsRemaining ?? this.aiCreditsRemaining,
         aiCreditsResetAt: aiCreditsResetAt,
+        seniorPwdDiscountEnabled: seniorPwdDiscountEnabled ?? this.seniorPwdDiscountEnabled,
       );
 
   /// True when the trial-expired banner/lock should show. Two paths:

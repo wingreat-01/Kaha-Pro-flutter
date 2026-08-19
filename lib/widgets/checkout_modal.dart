@@ -4,6 +4,7 @@ import '../state/cart_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../state/product_provider.dart';
 import '../state/payment_method_provider.dart';
+import '../state/store_provider.dart';
 import '../models/payment_method.dart';
 import '../state/recipe_provider.dart';
 import '../state/transaction_provider.dart';
@@ -80,7 +81,38 @@ class _CheckoutModalState extends State<CheckoutModal> {
   // amount).
   bool get _isCash => _selectedMethod?.name.trim().toLowerCase() == 'cash';
 
-  double get _total => widget.cart.total;
+  // ── Senior Citizen / PWD discount (RA 9994 / RA 10754) ──
+  // Entirely opt-in per sale, and the whole section only renders when
+  // the store owner has turned the feature on in Settings (see build()
+  // below) — when it's off, none of this state can even be reached.
+  bool _applyDiscount = false;
+  String _discountType = 'senior'; // 'senior' | 'pwd'
+  final _discountNameController = TextEditingController();
+  final _discountIdController = TextEditingController();
+
+  bool get _discountFieldsValid =>
+      _discountNameController.text.trim().isNotEmpty &&
+      _discountIdController.text.trim().isNotEmpty;
+
+  /// Raw cart total before any discount — what used to be called
+  /// `_total` before the discount feature existed. Prices in this app
+  /// are VAT-inclusive, so this is the gross, tax-in amount.
+  double get _subtotal => widget.cart.total;
+
+  /// Amount of VAT baked into the subtotal (12%), removed entirely for
+  /// an eligible Senior/PWD sale per RA 9994 / RA 10754.
+  double get _vatExemptAmount => _applyDiscount ? _subtotal - (_subtotal / 1.12) : 0;
+
+  /// 20% discount, computed on the VAT-exclusive amount (not the gross
+  /// total) — this is what the law actually specifies: discount first
+  /// removes VAT, then takes 20% off what's left.
+  double get _discountAmount => _applyDiscount ? (_subtotal / 1.12) * 0.20 : 0;
+
+  /// What the customer actually pays — subtotal minus VAT minus the
+  /// 20% discount when applicable, otherwise just the subtotal. Every
+  /// other calculation in this modal (tendered/change/record) uses
+  /// this, not `_subtotal`, directly.
+  double get _total => _applyDiscount ? _subtotal - _vatExemptAmount - _discountAmount : _subtotal;
 
   double? get _tendered {
     final raw = _controller.text.trim();
@@ -97,6 +129,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
 
   bool get _canConfirm {
     if (_selectedMethod == null) return false;
+    if (_applyDiscount && !_discountFieldsValid) return false;
     if (!_isCash) return true;
     final tendered = _tendered;
     return tendered != null && tendered >= _total;
@@ -160,6 +193,10 @@ class _CheckoutModalState extends State<CheckoutModal> {
       setState(() => _error = 'Select a payment method.');
       return;
     }
+    if (_applyDiscount && !_discountFieldsValid) {
+      setState(() => _error = 'Enter the cardholder\'s name and ID number.');
+      return;
+    }
     if (_isCash && !_canConfirm) {
       setState(() => _error = 'Amount tendered is less than the total due.');
       return;
@@ -186,6 +223,11 @@ class _CheckoutModalState extends State<CheckoutModal> {
             cashierName: widget.cashierName,
             paymentMethodId: _selectedMethod!.id,
             paymentMethodName: _selectedMethod!.name,
+            discountType: _applyDiscount ? _discountType : null,
+            discountHolderName: _applyDiscount ? _discountNameController.text.trim() : null,
+            discountIdNumber: _applyDiscount ? _discountIdController.text.trim() : null,
+            discountAmount: _applyDiscount ? _discountAmount : 0,
+            vatExemptAmount: _applyDiscount ? _vatExemptAmount : 0,
           );
 
       if (!mounted) return;
@@ -246,12 +288,18 @@ class _CheckoutModalState extends State<CheckoutModal> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _discountNameController.dispose();
+    _discountIdController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final methods = context.watch<PaymentMethodProvider>().activeMethods;
+    // Store-level feature flag — when off, nothing below related to
+    // the discount is built at all, not just disabled. See
+    // StoreProvider.seniorPwdDiscountEnabled / Settings toggle.
+    final discountFeatureEnabled = context.watch<StoreProvider>().seniorPwdDiscountEnabled;
 
     // Default to the first active method (Cash, per the seeded
     // defaults/sort_order) the first time methods are available —
@@ -275,67 +323,55 @@ class _CheckoutModalState extends State<CheckoutModal> {
           ),
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'CHECKOUT',
-                      style: AppTextStyles.mono(
-                        size: 13,
-                        weight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(CheckoutResult.cancelled),
-                      icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
-                      splashRadius: 18,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                LedTotal(amount: _total, label: 'TOTAL DUE'),
-                const SizedBox(height: 18),
-                Text(
-                  'PAYMENT METHOD',
-                  style: AppTextStyles.mono(
-                    size: 11,
-                    weight: FontWeight.w600,
-                    color: AppColors.textMuted,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (methods.isEmpty)
-                  Text(
-                    'No payment methods set up — add one in Settings.',
-                    style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      for (final method in methods)
-                        _MethodChip(
-                          label: method.name,
-                          selected: _selectedMethod?.id == method.id,
-                          onTap: () => setState(() {
-                            _selectedMethod = method;
-                            _error = null;
-                          }),
+                      Text(
+                        'CHECKOUT',
+                        style: AppTextStyles.mono(
+                          size: 13,
+                          weight: FontWeight.w700,
+                          color: AppColors.textSecondary,
+                          letterSpacing: 2,
                         ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(CheckoutResult.cancelled),
+                        icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
+                        splashRadius: 18,
+                      ),
                     ],
                   ),
-                const SizedBox(height: 18),
-                if (_isCash) ...[
+                  const SizedBox(height: 8),
+                  if (_applyDiscount) ...[
+                    _AmountLine(label: 'Subtotal', amount: _subtotal),
+                    _AmountLine(label: 'Less VAT', amount: -_vatExemptAmount),
+                    _AmountLine(label: '20% Senior/PWD Discount', amount: -_discountAmount),
+                    const SizedBox(height: 6),
+                  ],
+                  LedTotal(amount: _total, label: 'TOTAL DUE'),
+                  const SizedBox(height: 18),
+                  if (discountFeatureEnabled) ...[
+                    _DiscountSection(
+                      applyDiscount: _applyDiscount,
+                      discountType: _discountType,
+                      nameController: _discountNameController,
+                      idController: _discountIdController,
+                      onToggle: (value) => setState(() {
+                        _applyDiscount = value;
+                        _error = null;
+                      }),
+                      onTypeChanged: (type) => setState(() => _discountType = type),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
                   Text(
-                    'CASH TENDERED',
+                    'PAYMENT METHOD',
                     style: AppTextStyles.mono(
                       size: 11,
                       weight: FontWeight.w600,
@@ -344,78 +380,241 @@ class _CheckoutModalState extends State<CheckoutModal> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
-                    decoration: InputDecoration(
-                      prefixText: '₱ ',
-                      prefixStyle: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
-                      hintText: '0.00',
+                  if (methods.isEmpty)
+                    Text(
+                      'No payment methods set up — add one in Settings.',
+                      style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final method in methods)
+                          _MethodChip(
+                            label: method.name,
+                            selected: _selectedMethod?.id == method.id,
+                            onTap: () => setState(() {
+                              _selectedMethod = method;
+                              _error = null;
+                            }),
+                          ),
+                      ],
                     ),
-                    onChanged: (_) => setState(() => _error = null),
-                    onSubmitted: (_) => _confirm(),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _QuickChip(label: 'Exact', onTap: _setExact),
-                      for (final amount in _quickAmountOptions)
-                        _QuickChip(
-                          label: _useRoundUpTargets
-                              ? '₱${amount.toStringAsFixed(0)}'
-                              : '+₱${amount.toStringAsFixed(0)}',
-                          onTap: () => _useRoundUpTargets
-                              ? _setQuickTarget(amount)
-                              : _addQuickAmount(amount),
-                        ),
-                    ],
-                  ),
                   const SizedBox(height: 18),
-                  LedTotal(
-                    amount: _change,
-                    label: 'CHANGE',
-                    fontSize: 26,
-                    color: AppColors.tillGreen,
-                  ),
-                ] else if (_selectedMethod != null)
-                  Text(
-                    'Confirming ₱${_total.toStringAsFixed(2)} via ${_selectedMethod!.name}. No change due.',
-                    style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
-                  ),
-                if (_error != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    _error!,
-                    style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed, weight: FontWeight.w600),
+                  if (_isCash) ...[
+                    Text(
+                      'CASH TENDERED',
+                      style: AppTextStyles.mono(
+                        size: 11,
+                        weight: FontWeight.w600,
+                        color: AppColors.textMuted,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
+                      decoration: InputDecoration(
+                        prefixText: '₱ ',
+                        prefixStyle: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
+                        hintText: '0.00',
+                      ),
+                      onChanged: (_) => setState(() => _error = null),
+                      onSubmitted: (_) => _confirm(),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _QuickChip(label: 'Exact', onTap: _setExact),
+                        for (final amount in _quickAmountOptions)
+                          _QuickChip(
+                            label: _useRoundUpTargets
+                                ? '₱${amount.toStringAsFixed(0)}'
+                                : '+₱${amount.toStringAsFixed(0)}',
+                            onTap: () => _useRoundUpTargets
+                                ? _setQuickTarget(amount)
+                                : _addQuickAmount(amount),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    LedTotal(
+                      amount: _change,
+                      label: 'CHANGE',
+                      fontSize: 26,
+                      color: AppColors.tillGreen,
+                    ),
+                  ] else if (_selectedMethod != null)
+                    Text(
+                      'Confirming ₱${_total.toStringAsFixed(2)} via ${_selectedMethod!.name}. No change due.',
+                      style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+                    ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _error!,
+                      style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed, weight: FontWeight.w600),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: (_submitting || methods.isEmpty) ? null : _confirm,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.tillGreen,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Confirm payment'),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: (_submitting || methods.isEmpty) ? null : _confirm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.tillGreen,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Confirm payment'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Collapsible "Apply Senior/PWD Discount" block — a checkbox-style
+/// toggle chip that, once on, reveals the discount-type choice plus
+/// the cardholder name/ID fields required to legally apply the
+/// discount (RA 9994 / RA 10754 both require capturing the holder's
+/// name and ID/OSCA number on the receipt).
+class _DiscountSection extends StatelessWidget {
+  final bool applyDiscount;
+  final String discountType;
+  final TextEditingController nameController;
+  final TextEditingController idController;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<String> onTypeChanged;
+
+  const _DiscountSection({
+    required this.applyDiscount,
+    required this.discountType,
+    required this.nameController,
+    required this.idController,
+    required this.onToggle,
+    required this.onTypeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.slateField,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.slateBorder, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => onToggle(!applyDiscount),
+            child: Row(
+              children: [
+                Icon(
+                  applyDiscount ? Icons.check_box : Icons.check_box_outline_blank,
+                  size: 20,
+                  color: applyDiscount ? AppColors.tillGreen : AppColors.textMuted,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Apply Senior Citizen / PWD Discount',
+                    style: AppTextStyles.body(size: 13, weight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
           ),
-        ),
+          if (applyDiscount) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _MethodChip(
+                  label: 'Senior Citizen',
+                  selected: discountType == 'senior',
+                  onTap: () => onTypeChanged('senior'),
+                ),
+                _MethodChip(
+                  label: 'PWD',
+                  selected: discountType == 'pwd',
+                  onTap: () => onTypeChanged('pwd'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: nameController,
+              style: AppTextStyles.body(size: 13),
+              decoration: const InputDecoration(
+                labelText: 'Cardholder name',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: idController,
+              style: AppTextStyles.body(size: 13),
+              decoration: InputDecoration(
+                labelText: discountType == 'senior' ? 'Senior Citizen / OSCA ID no.' : 'PWD ID no.',
+                isDense: true,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One row of the subtotal/discount breakdown shown above TOTAL DUE
+/// once a discount is applied. Negative amounts render with a leading
+/// "-" so a deduction reads clearly at a glance.
+class _AmountLine extends StatelessWidget {
+  final String label;
+  final double amount;
+
+  const _AmountLine({required this.label, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    final isNegative = amount < 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+          Text(
+            '${isNegative ? '-' : ''}₱${amount.abs().toStringAsFixed(2)}',
+            style: AppTextStyles.mono(
+              size: 12,
+              weight: FontWeight.w600,
+              color: isNegative ? AppColors.ledgerRed : AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }
