@@ -215,8 +215,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     text: TextSpan(
                       style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, letterSpacing: 1.2),
                       children: [
-                        const TextSpan(text: 'KAHA'),
-                        TextSpan(text: 'PRO', style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, color: AppColors.ledAmber, letterSpacing: 1.2)),
+                        TextSpan(text: 'MERQ', style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, color: AppColors.ledAmber, letterSpacing: 1.2)),
                       ],
                     ),
                   ),

@@ -238,7 +238,7 @@ class _HomeShellState extends State<HomeShell> {
       appBar: AppBar(
         backgroundColor: AppColors.slate,
         elevation: 0,
-        title: Text('KAHAPRO', style: AppTextStyles.mono(size: 16, weight: FontWeight.w700, letterSpacing: 1)),
+        title: Text('MERQ', style: AppTextStyles.mono(size: 16, weight: FontWeight.w700, letterSpacing: 1)),
         actions: [
           Center(
             child: Text(

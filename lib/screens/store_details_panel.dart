@@ -112,7 +112,7 @@ class _StoreDetailsPanelState extends State<StoreDetailsPanel> {
             TextField(
               controller: _nameController,
               style: AppTextStyles.body(size: 14),
-              decoration: const InputDecoration(hintText: 'e.g. Kahapro Store'),
+              decoration: const InputDecoration(hintText: 'e.g. Merq Store'),
               onChanged: (_) => setState(() => _error = null),
             ),
             const SizedBox(height: 20),
