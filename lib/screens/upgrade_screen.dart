@@ -65,8 +65,8 @@ const List<_PlanInfo> _kPlans = [
   _PlanInfo(
     id: 'pro',
     name: 'Pro',
-    price: '₱690/mo',
-    priceNote: 'or ₱6,900/yr',
+    price: '₱490/mo',
+    priceNote: 'or ₱4,900/yr',
     features: [
       'Unlimited staff accounts',
       'Unlimited transaction history',
