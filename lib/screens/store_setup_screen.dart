@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
+
+// Play Store requires a privacy policy link reachable from within the
+// app itself (not just the Play Console listing), and reviewers check
+// the account-creation screen specifically since that's where personal
+// data -- email/password here -- is first collected. See also
+// login_screen.dart, which carries the same link for staff accounts
+// that never see this screen.
+const _kPrivacyPolicyUrl = 'https://merq.prohubapps.com/privacy.html';
 
 /// First-run screen, shown ahead of LoginScreen whenever there's no
 /// active Supabase Auth session on the device.
@@ -243,6 +252,17 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri.parse(_kPrivacyPolicyUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: Text(
+                      'Privacy Policy',
+                      style: AppTextStyles.body(size: 12.5, color: AppColors.textMuted),
+                    ),
+                  ),
                 ],
               ),
             ),

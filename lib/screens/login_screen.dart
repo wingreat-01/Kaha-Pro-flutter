@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/user.dart';
 import '../state/cart_provider.dart';
 import '../state/ingredient_provider.dart';
@@ -12,6 +13,13 @@ import '../state/store_provider.dart';
 import '../state/payment_method_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
+
+// Same URL/reasoning as store_setup_screen.dart's copy of this
+// constant -- kept local rather than imported cross-screen since it's
+// just a link target, not shared logic. Staff accounts land here
+// without ever seeing StoreSetupScreen, so this screen needs its own
+// copy for the policy to be reachable regardless of role.
+const _kPrivacyPolicyUrl = 'https://merq.prohubapps.com/privacy.html';
 
 /// Staff PIN login (Phase C: shared owner session + PIN-gated
 /// staff_users table). Checked via the verify_staff_login() RPC
@@ -269,6 +277,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Forgot your PIN? Ask your admin to reset it in Settings → Users.',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri.parse(_kPrivacyPolicyUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: Text(
+                      'Privacy Policy',
+                      style: AppTextStyles.body(size: 12.5, color: AppColors.textMuted),
+                    ),
                   ),
                 ],
               ),
