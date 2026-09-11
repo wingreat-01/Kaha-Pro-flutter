@@ -8,14 +8,14 @@ import type { ChatMessage, ProviderFn, ProviderResponse, ToolDef } from './types
 
 export type FallbackResult = { response: ProviderResponse; provider: string; fn: ProviderFn };
 
-// Order: free tiers first (Groq, Mistral, OpenRouter, DeepSeek, OpenAI),
+// Order: free tiers first (Groq, OpenRouter, Mistral, DeepSeek, OpenAI),
 // then Gemini last — Gemini is the only provider on a paid (prepaid
 // balance) tier here, so it's only reached if all five free-tier
 // providers above it fail.
 const providers: { name: string; fn: ProviderFn }[] = [
   { name: 'groq', fn: callGroq },
-  { name: 'mistral', fn: callMistral },
   { name: 'openrouter', fn: callOpenRouter },
+  { name: 'mistral', fn: callMistral },
   { name: 'deepseek', fn: callDeepSeek },
   { name: 'openai', fn: callOpenAI },
   { name: 'gemini', fn: callGemini }, // paid — only reached if all 5 free tiers above fail

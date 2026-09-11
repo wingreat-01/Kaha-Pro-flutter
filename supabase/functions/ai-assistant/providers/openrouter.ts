@@ -7,10 +7,12 @@ export function callOpenRouter(messages: ChatMessage[], tools: ToolDef[]): Promi
     {
       url: 'https://openrouter.ai/api/v1/chat/completions',
       apiKeyEnvVar: 'OPENROUTER_API_KEY',
-      // Switched from Llama 3.3 70B to OpenAI's gpt-oss-20b free-tier
-      // model -- verify this model is still free/available on
-      // OpenRouter before deploying.
-      model: 'openai/gpt-oss-20b:free',
+      // Switched from OpenAI's gpt-oss-20b free-tier model to Google's
+      // Gemma 4 26B A4B free-tier model -- lower usage volume on
+      // OpenRouter (less shared-capacity congestion) and native
+      // function-calling support for our TOOL_DEFS. Verify this model
+      // is still free/available on OpenRouter before deploying.
+      model: 'google/gemma-4-26b-a4b-it:free',
       extraHeaders: { 'HTTP-Referer': 'https://kahapro.app', 'X-Title': 'MERQ' },
       providerLabel: 'OpenRouter',
     },

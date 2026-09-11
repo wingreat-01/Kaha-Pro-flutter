@@ -40,6 +40,7 @@ class ProductProvider extends ChangeNotifier {
   /// the trigger is what actually enforces it. null = unlimited.
   static const Map<String, int?> _productLimits = {
     'free': 5,
+    'starter': 10,
     'basic': 30,
     'pro': null,
   };

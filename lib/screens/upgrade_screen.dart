@@ -45,10 +45,22 @@ const List<_PlanInfo> _kPlans = [
       'Everything in Pro, on us for 15 days',
       'Unlimited staff accounts',
       'Unlimited transaction history',
-      '20 AI assistant credits / month',
+      '10 AI assistant credits / month',
       'Unlimited products',
     ],
     footnote: 'One-time trial — pick Basic or Pro once it ends to keep going.',
+  ),
+  _PlanInfo(
+    id: 'starter',
+    name: 'Starter',
+    price: '₱190/mo',
+    priceNote: 'or ₱1,900/yr',
+    features: [
+      '1 staff account',
+      '30 days transaction history',
+      '10 AI assistant credits / month',
+      'Up to 10 products',
+    ],
   ),
   _PlanInfo(
     id: 'basic',
