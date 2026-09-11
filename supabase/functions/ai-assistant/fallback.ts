@@ -8,17 +8,18 @@ import type { ChatMessage, ProviderFn, ProviderResponse, ToolDef } from './types
 
 export type FallbackResult = { response: ProviderResponse; provider: string; fn: ProviderFn };
 
-// Order: free tiers first (Groq, OpenRouter, Mistral, DeepSeek, OpenAI),
-// then Gemini last — Gemini is the only provider on a paid (prepaid
-// balance) tier here, so it's only reached if all five free-tier
-// providers above it fail.
+// Order: free tiers first (Groq, Mistral, DeepSeek, OpenAI), then the
+// two paid (prepaid balance) providers -- OpenRouter (openai/gpt-oss-20b,
+// switched off the free Gemma 4 model after free-tier 429s), then
+// Gemini last. Retry order is unaffected by a provider's tier; this
+// just documents which ones now draw down a paid balance.
 const providers: { name: string; fn: ProviderFn }[] = [
   { name: 'groq', fn: callGroq },
-  { name: 'openrouter', fn: callOpenRouter },
+  { name: 'openrouter', fn: callOpenRouter }, // paid — see providers/openrouter.ts
   { name: 'mistral', fn: callMistral },
   { name: 'deepseek', fn: callDeepSeek },
   { name: 'openai', fn: callOpenAI },
-  { name: 'gemini', fn: callGemini }, // paid — only reached if all 5 free tiers above fail
+  { name: 'gemini', fn: callGemini }, // paid
 ];
 
 // Only used to pick the provider for the FIRST call of a turn. Once one
@@ -30,16 +31,30 @@ export async function callWithFallback(
   tools: ToolDef[],
 ): Promise<FallbackResult> {
   let lastError: unknown;
+  let failuresBeforeThis = 0;
 
   for (const { name, fn } of providers) {
     try {
       const response = await fn(messages, tools);
-      if (name === 'gemini') {
-        console.warn(`[ai-assistant] fell through to PAID provider (${name}) — check usage/limits`);
+      const isPaid = name === 'gemini' || name === 'openrouter';
+      if (isPaid && failuresBeforeThis > 0) {
+        // A real fallback: one or more providers ahead of this one in
+        // the list just failed, and we landed on a paid one as a
+        // result -- worth a warn, since repeated occurrences mean
+        // spend is being driven by upstream outages, not by design.
+        console.warn(
+          `[ai-assistant] fell through ${failuresBeforeThis} failed provider(s) to reach paid provider (${name}) — check usage/limits`,
+        );
+      } else if (isPaid) {
+        // Normal path: this paid provider was simply next in line and
+        // nothing failed ahead of it (e.g. OpenRouter at position 2).
+        // Informational only -- not a fallback event, so not a warn.
+        console.log(`[ai-assistant] resolved via paid provider (${name})`);
       }
       return { response, provider: name, fn };
     } catch (err) {
       lastError = err;
+      failuresBeforeThis++;
       console.error(`[ai-assistant] ${name} failed:`, err);
       if (!isRetryable(err)) throw err;
     }

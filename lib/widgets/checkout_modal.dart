@@ -161,12 +161,35 @@ class _CheckoutModalState extends State<CheckoutModal> {
   // cash values a customer would realistically hand over — tapping one
   // *adds* it to whatever's already entered, so a couple of taps can
   // stack bills together. An amount only shows if it alone could cover
-  // the total (e.g. a ₱170 total hides ₱20/₱50/₱100 but keeps ₱200,
-  // ₱500, ₱1000 — someone paying with two ₱100 bills, a ₱500 bill, or
-  // only having a ₱1000 bill are all real cases, so nothing above the
-  // due amount gets filtered out just because a smaller bill would also
-  // clear it). These are the actual Philippine peso bill denominations.
-  static const List<double> _billDenominations = [20, 50, 100, 200, 500, 1000];
+  // the total (e.g. a ₱170 total hides ₱20/₱50/₱100 but keeps ₱500,
+  // ₱1000 — someone paying with a ₱500 bill or only having a ₱1000
+  // bill are both real cases, so nothing above the due amount gets
+  // filtered out just because a smaller bill would also clear it).
+  //
+  // ₱200 is deliberately excluded — the BSP halted production of the
+  // ₱200 bill in 2021 due to low usage. It's still legal tender but
+  // increasingly rare in a cash drawer, so it's no longer a safe bet
+  // for a "next bill up" suggestion.
+  static const List<double> _billDenominations = [20, 50, 100, 500, 1000];
+
+  // For totals that don't line up with an actual bill (e.g. ₱220),
+  // round up to the nearest ₱100 as an additional candidate — a
+  // cashier is far more likely to reach for a stack of ₱100 bills
+  // (₱300) than to have an increasingly-rare ₱200 note. Shown
+  // alongside the real bills that also cover the total (e.g. ₱500,
+  // ₱1000) rather than instead of them — a customer could easily be
+  // handing over any one of these, so all three stay as options
+  // instead of guessing which is most likely. The Wrap this feeds
+  // into (see build()) flows extra chips onto a second line, so
+  // there's no fixed cap on how many show.
+  List<double> get _billBasedOptions {
+    final candidates = <double>{
+      ..._billDenominations.where((amount) => amount >= _total),
+      if (_total > 0) _ceilToMultiple(_total, 100),
+    }.toList()
+      ..sort();
+    return candidates;
+  }
 
   // Above ₱1000, no single bill covers the total, so there's nothing
   // sensible to "add". Instead offer nice round-up targets — next
@@ -185,9 +208,8 @@ class _CheckoutModalState extends State<CheckoutModal> {
 
   bool get _useRoundUpTargets => _total > 1000;
 
-  List<double> get _quickAmountOptions => _useRoundUpTargets
-      ? _quickRoundUpTargets
-      : _billDenominations.where((amount) => amount >= _total).toList();
+  List<double> get _quickAmountOptions =>
+      _useRoundUpTargets ? _quickRoundUpTargets : _billBasedOptions;
 
   Future<void> _confirm() async {
     if (_selectedMethod == null) {

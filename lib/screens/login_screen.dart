@@ -76,6 +76,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // TEMP DEBUG -- remove before shipping. Prints the store-owner's
+    // access token to the terminal running `flutter run`, for manual
+    // curl testing of ai-assistant against a real authenticated
+    // session instead of the anon key.
+    // ignore: avoid_print
+    print('ACCESS TOKEN: ${Supabase.instance.client.auth.currentSession?.accessToken}');
+
     try {
       final rows = await Supabase.instance.client.rpc(
         'verify_staff_login',
@@ -200,15 +207,14 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: AppColors.slateField,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.slateBorder, width: 1),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      'assets/branding/logo.png',
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
                     ),
-                    child: const Icon(Icons.point_of_sale, color: AppColors.ledAmber, size: 26),
                   ),
                   const SizedBox(height: 12),
                   RichText(

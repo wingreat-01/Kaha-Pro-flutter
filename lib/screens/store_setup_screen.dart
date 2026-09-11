@@ -166,28 +166,19 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: AppColors.slateField,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.slateBorder, width: 1),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      'assets/branding/logo.png',
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
                     ),
-                    child: const Icon(Icons.storefront, color: AppColors.ledAmber, size: 26),
                   ),
                   const SizedBox(height: 12),
-                  RichText(
-                    text: TextSpan(
-                      style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, letterSpacing: 1.2),
-                      children: [
-                        const TextSpan(text: 'KAHA'),
-                        TextSpan(
-                          text: 'PRO',
-                          style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, color: AppColors.ledAmber, letterSpacing: 1.2),
-                        ),
-                      ],
-                    ),
+                  Text(
+                    'MERQ',
+                    style: AppTextStyles.mono(size: 18, weight: FontWeight.w700, color: AppColors.ledAmber, letterSpacing: 1.2),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -196,7 +187,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                   ),
                   const SizedBox(height: 28),
                   if (!_isSignIn) ...[
-                    _SetupField(label: 'Store Name', controller: _storeNameCtrl, hint: 'e.g. Kaha Café'),
+                    _SetupField(label: 'Store Name', controller: _storeNameCtrl, hint: 'e.g. Sunrise Café'),
                     const SizedBox(height: 14),
                     _BusinessTypePicker(
                       value: _businessType,

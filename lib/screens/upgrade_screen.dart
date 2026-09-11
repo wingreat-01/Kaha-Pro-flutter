@@ -58,8 +58,8 @@ const List<_PlanInfo> _kPlans = [
     features: [
       '1 staff account',
       '30 days transaction history',
-      '10 AI assistant credits / month',
-      'Up to 10 products',
+      '30 AI assistant credits / month',
+      'Up to 50 products',
     ],
   ),
   _PlanInfo(
@@ -70,8 +70,8 @@ const List<_PlanInfo> _kPlans = [
     features: [
       '5 staff accounts',
       '90 days transaction history',
-      '30 AI assistant credits / month',
-      'Up to 30 products',
+      '50 AI assistant credits / month',
+      'Up to 200 products',
     ],
   ),
   _PlanInfo(
@@ -82,7 +82,7 @@ const List<_PlanInfo> _kPlans = [
     features: [
       'Unlimited staff accounts',
       'Unlimited transaction history',
-      '90 AI assistant credits / month',
+      '100 AI assistant credits / month',
       'Unlimited products',
       'Priority support',
     ],
