@@ -24,7 +24,7 @@ const MAX_TOOL_ITERATIONS = 6; // guard against a runaway tool-call loop
 // list comment. Used to tag ai_usage_log rows so a future breakdown
 // query can separate "resolved on a free tier" from "fell through to a
 // paid one" without re-deriving that from the provider name each time.
-const PAID_PROVIDERS = new Set(['deepseek', 'openai']);
+const PAID_PROVIDERS = new Set(['gemini']);
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -238,7 +238,7 @@ Deno.serve(async (req: Request) => {
   // 3. Usage-breakdown log — metrics side-channel only, never allowed
   // to affect the response. This is what lets a future credit-ceiling
   // decision (see kahapro-flutter-migration notes on the 30/90/20
-  // bump) be made from real Groq/Mistral/Gemini/OpenRouter-vs-paid
+  // bump) be made from real Groq/Mistral/OpenRouter/DeepSeek/OpenAI-vs-paid
   // hit-rate data instead of judgment. Deliberately not awaited on
   // the response path -- EdgeRuntime.waitUntil lets it finish after
   // the response has already gone out, and its own .catch() means a

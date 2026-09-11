@@ -8,17 +8,17 @@ import type { ChatMessage, ProviderFn, ProviderResponse, ToolDef } from './types
 
 export type FallbackResult = { response: ProviderResponse; provider: string; fn: ProviderFn };
 
-// Order: free tiers first (Groq, Mistral, Gemini, OpenRouter), then paid
-// fallbacks (DeepSeek, OpenAI) last — DeepSeek and OpenAI both require a
-// prepaid account balance (no free tier), so they're only reached if all
-// four free-tier providers are down.
+// Order: free tiers first (Groq, Mistral, OpenRouter, DeepSeek, OpenAI),
+// then Gemini last — Gemini is the only provider on a paid (prepaid
+// balance) tier here, so it's only reached if all five free-tier
+// providers above it fail.
 const providers: { name: string; fn: ProviderFn }[] = [
   { name: 'groq', fn: callGroq },
   { name: 'mistral', fn: callMistral },
-  { name: 'gemini', fn: callGemini },
   { name: 'openrouter', fn: callOpenRouter },
-  { name: 'deepseek', fn: callDeepSeek }, // paid — only reached if all 4 free tiers fail
-  { name: 'openai', fn: callOpenAI },     // paid — only reached if all 5 earlier tiers fail
+  { name: 'deepseek', fn: callDeepSeek },
+  { name: 'openai', fn: callOpenAI },
+  { name: 'gemini', fn: callGemini }, // paid — only reached if all 5 free tiers above fail
 ];
 
 // Only used to pick the provider for the FIRST call of a turn. Once one
@@ -34,7 +34,7 @@ export async function callWithFallback(
   for (const { name, fn } of providers) {
     try {
       const response = await fn(messages, tools);
-      if (name === 'deepseek' || name === 'openai') {
+      if (name === 'gemini') {
         console.warn(`[ai-assistant] fell through to PAID provider (${name}) — check usage/limits`);
       }
       return { response, provider: name, fn };
