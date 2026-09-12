@@ -12,7 +12,8 @@ import '../widgets/bounded_content.dart';
 import '../models/store.dart';
 import 'upgrade_screen.dart';
 import 'store_details_panel.dart';
-import 'about_panel.dart';
+import 'settings/about_screen.dart';
+import 'settings/delete_account_screen.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -30,8 +31,20 @@ class SettingsPanel extends StatelessWidget {
   // RegisterScreen as cashierName.
   final String staffId;
   final String staffName;
+  // Same callback HomeShell already passes as onLogout at the
+  // _KahaproAppState level (see main.dart) -- clears the PIN-level
+  // session so the app falls back to StoreSetupScreen. Needed here
+  // because DeleteAccountScreen must clear it too: Supabase.signOut()
+  // alone does not clear _loggedInUser (see main.dart's own comment
+  // on why those are two separate concerns).
+  final VoidCallback onLogout;
 
-  const SettingsPanel({super.key, required this.staffId, required this.staffName});
+  const SettingsPanel({
+    super.key,
+    required this.staffId,
+    required this.staffName,
+    required this.onLogout,
+  });
 
   Future<void> _toggleSeniorPwdDiscount(BuildContext context, bool value) async {
     try {
@@ -152,7 +165,16 @@ class SettingsPanel extends StatelessWidget {
           label: 'About',
           subtitle: 'Version, support',
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AboutPanel()),
+            MaterialPageRoute(builder: (_) => const AboutScreen()),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.delete_forever_outlined,
+          label: 'Delete Account',
+          subtitle: 'Permanently delete your account and data',
+          isWarning: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => DeleteAccountScreen(onAccountDeleted: onLogout)),
           ),
         ),
         ],

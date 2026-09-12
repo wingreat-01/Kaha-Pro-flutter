@@ -134,7 +134,11 @@ class _HomeShellState extends State<HomeShell> {
         // entirely for non-admins, so this only matters if _section
         // somehow ends up here some other way.
         return _isAdmin
-            ? SettingsPanel(staffId: widget.user.id, staffName: widget.user.name)
+            ? SettingsPanel(
+                staffId: widget.user.id,
+                staffName: widget.user.name,
+                onLogout: widget.onLogout,
+              )
             : RegisterScreen(cashierName: widget.user.name);
     }
   }

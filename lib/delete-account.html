@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delete Your Account — MERQ POS</title>
+<meta name="description" content="Request deletion of your MERQ POS account and data.">
+<style>
+  :root {
+    --charcoal: #1E2126;
+    --slate: #262b31;
+    --slate-border: #363c44;
+    --amber: #FFB020;
+    --red: #e05252;
+    --text: #f4f4f2;
+    --text-muted: #9aa1ab;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--charcoal);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 48px 20px 80px; }
+  .brand { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: 1px; color: var(--amber); font-size: 15px; margin-bottom: 32px; }
+  h1 { font-size: 28px; margin: 0 0 12px; letter-spacing: -0.02em; }
+  p { color: var(--text-muted); font-size: 15px; }
+  .warning {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: rgba(224, 82, 82, 0.08);
+    border: 1px solid rgba(224, 82, 82, 0.35);
+    border-radius: 10px;
+    padding: 16px;
+    margin: 24px 0;
+  }
+  .warning strong { color: var(--red); display: block; margin-bottom: 4px; }
+  .warning p { margin: 0; color: #d9b9b9; font-size: 14px; }
+  ul { color: var(--text-muted); font-size: 14.5px; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  form {
+    background: var(--slate);
+    border: 1px solid var(--slate-border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 28px;
+  }
+  label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+  input, textarea {
+    width: 100%;
+    background: var(--charcoal);
+    border: 1px solid var(--slate-border);
+    border-radius: 8px;
+    padding: 11px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 18px;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+  button {
+    width: 100%;
+    background: var(--red);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 13px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:hover { background: #c94747; }
+  .note { font-size: 12.5px; color: var(--text-muted); margin-top: 16px; }
+  .footer { margin-top: 40px; font-size: 12.5px; color: var(--text-muted); }
+  .footer a { color: var(--amber); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">MERQ POS</div>
+  <h1>Delete your account</h1>
+  <p>Use this form to request permanent deletion of your MERQ POS account and store data, without needing to open the app.</p>
+
+  <div class="warning">
+    <div>
+      <strong>This cannot be undone</strong>
+      <p>Deleting your account permanently removes your store, products, staff accounts, and complete transaction history. If other people are members of your store, only your own access is removed and the store keeps running for them.</p>
+    </div>
+  </div>
+
+  <p>What gets deleted:</p>
+  <ul>
+    <li>Your store profile and settings</li>
+    <li>All products, categories and ingredients</li>
+    <li>All staff accounts and PINs</li>
+    <li>Your complete sales and transaction history</li>
+    <li>Payment methods and receipt settings</li>
+  </ul>
+
+  <form action="mailto:merq@prohubapps.com" method="post" enctype="text/plain">
+    <label for="email">Account email</label>
+    <input type="email" id="email" name="Account email" placeholder="you@example.com" required>
+
+    <label for="store">Store name (as shown in the app)</label>
+    <input type="text" id="store" name="Store name" placeholder="e.g. Flynn's Coffee" required>
+
+    <label for="notes">Anything else we should know? (optional)</label>
+    <textarea id="notes" name="Notes" placeholder="Optional"></textarea>
+
+    <button type="submit">Request account deletion</button>
+  </form>
+
+  <p class="note">
+    Submitting this form opens an email to merq@prohubapps.com with your request. We process deletion requests within 7 days and will confirm by email once your account and data have been removed. If your email client doesn't open automatically, email us directly at
+    <a href="mailto:merq@prohubapps.com" style="color: var(--amber)">merq@prohubapps.com</a> with the same details.
+  </p>
+
+  <div class="footer">
+    <a href="/privacy.html">Privacy Policy</a> · © 2026 ProHubApps
+  </div>
+</div>
+</body>
+</html>

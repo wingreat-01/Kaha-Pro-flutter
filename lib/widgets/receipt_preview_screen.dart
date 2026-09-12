@@ -1,32 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/store.dart';
 import '../models/transaction.dart';
+import '../state/printer_provider.dart';
 import '../theme/app_theme.dart';
+import '../screens/settings/printer_settings_screen.dart';
 
-/// Post-checkout receipt preview — Stage 1 of the receipt printing
-/// feature (see StoreProvider.receiptPrintingEnabled / the Settings
-/// toggle). Renders the same info a physical receipt would show,
-/// styled as the app's "torn paper ticket" (paper cream #F6F1E4,
-/// IBM Plex Mono) per the design system, but the Print button is a
-/// stub for now — Stage 2 wires this up to an actual Bluetooth
-/// thermal printer once that's built and tested against real
-/// hardware. Kept as a full page (not a dialog) since a receipt is
-/// the kind of thing a cashier might want to look at for a moment,
-/// scroll through a longer cart, or eventually screenshot/share.
-class ReceiptPreviewScreen extends StatelessWidget {
+/// Post-checkout receipt preview — gated by
+/// StoreProvider.receiptPrintingEnabled / the Settings toggle. Renders
+/// the same info a physical receipt would show, styled as the app's
+/// "torn paper ticket" (paper cream #F6F1E4, IBM Plex Mono) per the
+/// design system. The Print button sends to whatever printer is
+/// saved in PrinterProvider (Bluetooth or WiFi/network on phone,
+/// browser print dialog on web) — if nothing's saved yet, it routes
+/// to PrinterSettingsScreen instead of failing silently. Kept as a
+/// full page (not a dialog) since a receipt is the kind of thing a
+/// cashier might want to look at for a moment, scroll through a
+/// longer cart, or eventually screenshot/share.
+class ReceiptPreviewScreen extends StatefulWidget {
   final Transaction transaction;
   final Store? store;
 
   const ReceiptPreviewScreen({super.key, required this.transaction, this.store});
 
-  void _printStub(BuildContext context) {
+  @override
+  State<ReceiptPreviewScreen> createState() => _ReceiptPreviewScreenState();
+}
+
+class _ReceiptPreviewScreenState extends State<ReceiptPreviewScreen> {
+  Future<void> _handlePrint() async {
+    final provider = context.read<PrinterProvider>();
+
+    if (!provider.hasPrinter) {
+      final result = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
+      );
+      // Coming back from Settings having just saved a printer is the
+      // common case worth auto-retrying; otherwise leave it to the
+      // cashier to tap Print again.
+      if (result != true || !mounted || !provider.hasPrinter) return;
+    }
+
+    final ok = await provider.printReceipt(transaction: widget.transaction, store: widget.store);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Printer connection is coming in a future update.')),
+      SnackBar(content: Text(ok ? 'Receipt sent to printer.' : (provider.lastError ?? 'Print failed.'))),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final printerStatus = context.watch<PrinterProvider>().status;
+
     return Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
@@ -41,7 +66,7 @@ class ReceiptPreviewScreen extends StatelessWidget {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 380),
-                    child: _ReceiptTicket(transaction: transaction, store: store),
+                    child: _ReceiptTicket(transaction: widget.transaction, store: widget.store),
                   ),
                 ),
               ),
@@ -52,20 +77,26 @@ class ReceiptPreviewScreen extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => _printStub(context),
+                      onPressed: printerStatus == PrinterConnectionStatus.printing ? null : _handlePrint,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.textPrimary,
                         side: const BorderSide(color: AppColors.slateBorder),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.print_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Print'),
-                        ],
-                      ),
+                      child: printerStatus == PrinterConnectionStatus.printing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.print_outlined, size: 18),
+                                SizedBox(width: 8),
+                                Text('Print'),
+                              ],
+                            ),
                     ),
                   ),
                   const SizedBox(width: 12),
