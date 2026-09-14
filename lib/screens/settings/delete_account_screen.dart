@@ -12,11 +12,13 @@ import '../../theme/app_theme.dart';
 /// [onAccountDeleted] is the same shape as HomeShell's existing
 /// onLogout callback (clears the PIN-level _loggedInUser session in
 /// _KahaproAppState) -- it must be threaded down through SettingsPanel
-/// from wherever HomeShell is built, since Supabase.auth.signOut()
-/// alone does NOT do this (see main.dart's own comment on onLogout:
-/// signing out of Supabase does not clear the PIN session, and this
-/// screen needs both cleared for the app to actually land back on
-/// StoreSetupScreen instead of showing a signed-out HomeShell).
+/// from wherever HomeShell is built. Note that this callback alone does
+/// NOT make this screen disappear: it only swaps what MaterialApp.home
+/// builds, which doesn't pop routes already pushed on top (Settings ->
+/// Delete Account got here via Navigator.push). _confirmAndDelete()
+/// explicitly pops back to the root route before calling it, so the
+/// app actually lands on StoreSetupScreen instead of leaving this
+/// screen stuck on top of an app state that already changed underneath.
 class DeleteAccountScreen extends StatefulWidget {
   final VoidCallback onAccountDeleted;
   const DeleteAccountScreen({super.key, required this.onAccountDeleted});
@@ -64,10 +66,17 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
       // Server-side deletion succeeded. Clear the local Supabase
       // session (the deleted user's old access token would otherwise
       // keep looking "signed in" client-side until it naturally
-      // expires), then clear the PIN-level session via the callback
-      // so the app actually falls back to StoreSetupScreen.
+      // expires), then pop back to the root route -- MaterialApp.home
+      // changing (via onAccountDeleted below) only affects what a
+      // fresh navigation stack builds, it does NOT pop routes already
+      // pushed on top (Settings -> Delete Account got here via
+      // Navigator.push), so without this the app state updates
+      // correctly underneath but stays hidden behind this screen,
+      // which is what read as "stuck loading forever."
       await Supabase.instance.client.auth.signOut();
       if (!mounted) return;
+      setState(() => _deleting = false);
+      Navigator.of(context).popUntil((route) => route.isFirst);
       widget.onAccountDeleted();
     } catch (e) {
       if (!mounted) return;

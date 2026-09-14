@@ -44,72 +44,84 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return json({ error: "Missing Authorization header." }, 401);
-  }
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return json({ error: "Missing Authorization header." }, 401);
+    }
 
-  // Verify the caller using their own token -- this is what proves who
-  // is actually asking, independent of anything the client body claims.
-  const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const {
-    data: { user },
-    error: userError,
-  } = await callerClient.auth.getUser();
-
-  if (userError || !user) {
-    return json({ error: "Could not verify your session. Please sign in again." }, 401);
-  }
-
-  // Everything from here runs with the service role: RLS on `stores`
-  // would otherwise be fine for the owner's own row, but ai_usage_log
-  // and the RPC itself need it regardless, so use one privileged client
-  // consistently rather than mixing caller-scoped and service-role calls.
-  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-  const { data: store, error: storeError } = await adminClient
-    .from("stores")
-    .select("id")
-    .eq("owner_id", user.id)
-    .maybeSingle();
-
-  if (storeError) {
-    return json({ error: "Could not look up your store. Please try again." }, 500);
-  }
-
-  // A store-less auth user shouldn't be possible in normal flow, but if
-  // it happens (e.g. abandoned onboarding), just fall through to deleting
-  // the auth user -- there's no store data to clean up.
-  if (store) {
-    const { error: cascadeError } = await adminClient.rpc("delete_account_cascade", {
-      p_store_id: store.id,
+    // Verify the caller using their own token -- this is what proves who
+    // is actually asking, independent of anything the client body claims.
+    const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
     });
+    const {
+      data: { user },
+      error: userError,
+    } = await callerClient.auth.getUser();
 
-    if (cascadeError) {
-      console.error("delete_account_cascade failed:", cascadeError);
+    if (userError || !user) {
+      return json({ error: "Could not verify your session. Please sign in again." }, 401);
+    }
+
+    // Everything from here runs with the service role: RLS on `stores`
+    // would otherwise be fine for the owner's own row, but the RPC
+    // itself needs it regardless, so use one privileged client
+    // consistently rather than mixing caller-scoped and service-role calls.
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const { data: membership, error: membershipError } = await adminClient
+      .from("store_members")
+      .select("store_id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error("store_members lookup failed:", membershipError);
+      return json({ error: "Could not look up your store. Please try again." }, 500);
+    }
+
+    // A store-less auth user shouldn't be possible in normal flow, but if
+    // it happens (e.g. abandoned onboarding), just fall through to deleting
+    // the auth user -- there's no store data to clean up.
+    if (membership) {
+      const { error: cascadeError } = await adminClient.rpc("delete_account_cascade", {
+        p_store_id: membership.store_id,
+      });
+
+      if (cascadeError) {
+        console.error("delete_account_cascade failed:", cascadeError);
+        return json(
+          { error: "Could not delete your data. Nothing was removed -- please try again or contact support." },
+          500,
+        );
+      }
+    }
+
+    const { error: deleteUserError } = await adminClient.auth.admin.deleteUser(user.id);
+
+    if (deleteUserError) {
+      console.error("auth.admin.deleteUser failed after data was already removed:", deleteUserError);
+      // Data is already gone at this point -- tell the truth about that
+      // rather than implying nothing happened.
       return json(
-        { error: "Could not delete your data. Nothing was removed -- please try again or contact support." },
+        {
+          error:
+            "Your data was deleted, but we couldn't remove your login. Contact support and we'll finish that manually.",
+        },
         500,
       );
     }
+
+    return json({ success: true });
+  } catch (err) {
+    // Anything that throws rather than returning {error} (a genuine JS
+    // exception -- bad input, an unexpected null, a network-level
+    // failure) previously killed the isolate silently (visible only as
+    // an "EarlyDrop" shutdown with no application log line). Catching
+    // it here guarantees the real message and stack always show up in
+    // the Logs tab instead of leaving a 500 with no explanation.
+    console.error("delete-account unhandled exception:", err instanceof Error ? err.stack ?? err.message : err);
+    return json({ error: "Something went wrong. Please try again or contact support." }, 500);
   }
-
-  const { error: deleteUserError } = await adminClient.auth.admin.deleteUser(user.id);
-
-  if (deleteUserError) {
-    console.error("auth.admin.deleteUser failed after data was already removed:", deleteUserError);
-    // Data is already gone at this point -- tell the truth about that
-    // rather than implying nothing happened.
-    return json(
-      {
-        error:
-          "Your data was deleted, but we couldn't remove your login. Contact support and we'll finish that manually.",
-      },
-      500,
-    );
-  }
-
-  return json({ success: true });
 });

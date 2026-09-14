@@ -26,9 +26,21 @@ Future<void> main() async {
   // ProductProvider/CartProvider/TransactionProvider/UserProvider are
   // still in-memory below — wiring those to real Supabase tables is
   // Phases D-G, not this step.
+  // authFlowType is set to implicit rather than the current default
+  // (pkce). PKCE ties the emailed token_hash to a code verifier
+  // stored on the device that made the request -- fine for in-app
+  // deep links, but password reset here is inherently cross-device:
+  // the request comes from the phone, the link is opened in a
+  // browser. With PKCE, that browser can never redeem it (fails with
+  // a "pkce_"-prefixed token_hash rejected by verifyOtp). Implicit
+  // produces an unprefixed token_hash that reset-password.html's
+  // verifyOtp() can redeem from any device.
   await Supabase.initialize(
     url: SupabaseConfig.url,
     publishableKey: SupabaseConfig.publishableKey,
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.implicit,
+    ),
   );
 
   // TEMP — for curl-testing the ai-assistant Edge Function's credit
