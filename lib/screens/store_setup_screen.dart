@@ -357,12 +357,13 @@ class _Chip extends StatelessWidget {
 /// let someone probe which emails have accounts, same reasoning as
 /// LoginScreen's merged "Invalid name or PIN" message.
 ///
-/// IMPORTANT: resetPasswordForEmail's redirectTo must point at a deep
-/// link this app actually handles, or the reset link in the email
-/// will open in a browser with nowhere useful to land. If deep
-/// linking isn't set up yet, leave redirectTo unset for now -- the
-/// user can still complete the reset via Supabase's default hosted
-/// page, they just won't be dropped back into the app automatically.
+/// redirectTo points at reset-password.html, hosted alongside
+/// privacy.html and delete-account.html on merq.prohubapps.com --
+/// same branded card style as this dialog. The user finishes the
+/// reset in the browser, then comes back and signs in in the app;
+/// that URL must also be whitelisted in Supabase under
+/// Authentication -> URL Configuration -> Redirect URLs, or the
+/// reset link in the email will be rejected.
 class _ForgotPasswordDialog extends StatefulWidget {
   final TextEditingController initialEmailCtrl;
   const _ForgotPasswordDialog({required this.initialEmailCtrl});
@@ -389,9 +390,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     try {
       await Supabase.instance.client.auth.resetPasswordForEmail(
         email,
-        // redirectTo: 'io.supabase.kahapro://reset-callback/',
-        // ^ set this once a deep link route exists to catch the
-        // callback; until then the hosted Supabase page still works.
+        redirectTo: 'https://merq.prohubapps.com/reset-password.html',
       );
       if (!mounted) return;
       setState(() {
