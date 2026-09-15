@@ -237,6 +237,14 @@ class _HomeShellState extends State<HomeShell> {
                 ? 'AI Assistant — out of credits this month'
                 : 'AI Assistant';
 
+    // The cashier name/role label is a nice-to-have, not essential —
+    // on a phone-width screen there usually isn't room for it
+    // alongside the title and every icon button without squeezing the
+    // title out entirely and clipping both ends of the actions row
+    // against the screen edges. Past this width, admins/cashiers can
+    // still see who's logged in via the Settings/Users screen.
+    final isWideEnoughForNameLabel = MediaQuery.of(context).size.width >= 480;
+
     return Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
@@ -244,13 +252,16 @@ class _HomeShellState extends State<HomeShell> {
         elevation: 0,
         title: Text('MERQ', style: AppTextStyles.mono(size: 16, weight: FontWeight.w700, letterSpacing: 1)),
         actions: [
-          Center(
-            child: Text(
-              '${widget.user.name} · ${widget.user.role.label}',
-              style: AppTextStyles.mono(size: 11, color: AppColors.textMuted, letterSpacing: 0.5),
+          if (isWideEnoughForNameLabel) ...[
+            Center(
+              child: Text(
+                '${widget.user.name} · ${widget.user.role.label}',
+                style: AppTextStyles.mono(size: 11, color: AppColors.textMuted, letterSpacing: 0.5),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
+          ],
           _headerIcon(
             icon: Icons.point_of_sale_outlined,
             tooltip: 'Register',
@@ -294,7 +305,7 @@ class _HomeShellState extends State<HomeShell> {
             tooltip: 'Logout',
             onPressed: widget.onLogout,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 12),
         ],
       ),
       body: Stack(

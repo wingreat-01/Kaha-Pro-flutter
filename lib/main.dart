@@ -114,7 +114,7 @@ class _KahaproAppState extends State<KahaproApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kahapro',
+      title: 'MERQ',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(),
       home: _loggedInUser != null

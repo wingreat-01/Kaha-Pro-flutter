@@ -152,6 +152,15 @@ class _CheckoutModalState extends State<CheckoutModal> {
     setState(() => _error = null);
   }
 
+  // Resets the tendered field back to empty — for when a cashier taps
+  // the wrong quick-amount chip and needs to start over, rather than
+  // manually backspacing or having to close/reopen the checkout modal.
+  void _clearTendered() {
+    _controller.clear();
+    setState(() => _error = null);
+    _focusNode.requestFocus();
+  }
+
   double _ceilToMultiple(double value, double multiple) =>
       (value / multiple).ceil() * multiple;
 
@@ -483,6 +492,11 @@ class _CheckoutModalState extends State<CheckoutModal> {
                                 ? _setQuickTarget(amount)
                                 : _addQuickAmount(amount),
                           ),
+                        _QuickChip(
+                          label: 'CLR',
+                          onTap: _clearTendered,
+                          isDestructive: true,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 18),
@@ -699,8 +713,9 @@ class _MethodChip extends StatelessWidget {
 class _QuickChip extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
+  final bool isDestructive;
 
-  const _QuickChip({required this.label, required this.onTap});
+  const _QuickChip({required this.label, required this.onTap, this.isDestructive = false});
 
   @override
   Widget build(BuildContext context) {
@@ -710,13 +725,20 @@ class _QuickChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.slateField,
+          color: isDestructive ? AppColors.ledgerRed.withOpacity(0.12) : AppColors.slateField,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.slateBorder, width: 1),
+          border: Border.all(
+            color: isDestructive ? AppColors.ledgerRed : AppColors.slateBorder,
+            width: 1,
+          ),
         ),
         child: Text(
           label,
-          style: AppTextStyles.mono(size: 12, weight: FontWeight.w600, color: AppColors.textPrimary),
+          style: AppTextStyles.mono(
+            size: 12,
+            weight: FontWeight.w600,
+            color: isDestructive ? AppColors.ledgerRed : AppColors.textPrimary,
+          ),
         ),
       ),
     );
