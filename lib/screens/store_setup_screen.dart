@@ -486,7 +486,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 }
 
-class _SetupField extends StatelessWidget {
+class _SetupField extends StatefulWidget {
   final String label;
   final TextEditingController controller;
   final String? hint;
@@ -502,21 +502,45 @@ class _SetupField extends StatelessWidget {
   });
 
   @override
+  State<_SetupField> createState() => _SetupFieldState();
+}
+
+class _SetupFieldState extends State<_SetupField> {
+  // Starts obscured whenever the field is a password field at all —
+  // only flips to visible if the person taps the eye icon below.
+  late bool _obscured = widget.obscure;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          widget.label,
           style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1),
         ),
         const SizedBox(height: 6),
         TextField(
-          controller: controller,
-          obscureText: obscure,
+          controller: widget.controller,
+          obscureText: widget.obscure && _obscured,
           style: AppTextStyles.body(size: 14),
-          decoration: InputDecoration(hintText: hint),
-          onSubmitted: onSubmit == null ? null : (_) => onSubmit!(),
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            // Only a password-type field gets the toggle — Store
+            // Name/Email/etc. pass obscure: false and never show it.
+            suffixIcon: widget.obscure
+                ? IconButton(
+                    icon: Icon(
+                      _obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
+                    tooltip: _obscured ? 'Show password' : 'Hide password',
+                    onPressed: () => setState(() => _obscured = !_obscured),
+                  )
+                : null,
+          ),
+          onSubmitted: widget.onSubmit == null ? null : (_) => widget.onSubmit!(),
         ),
       ],
     );

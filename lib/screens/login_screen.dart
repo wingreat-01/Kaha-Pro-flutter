@@ -299,7 +299,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class _LabeledField extends StatelessWidget {
+class _LabeledField extends StatefulWidget {
   final String label;
   final TextEditingController controller;
   final bool obscure;
@@ -318,26 +318,50 @@ class _LabeledField extends StatelessWidget {
   });
 
   @override
+  State<_LabeledField> createState() => _LabeledFieldState();
+}
+
+class _LabeledFieldState extends State<_LabeledField> {
+  // Starts obscured whenever the field is obscured at all -- only
+  // flips to visible if the person taps the eye icon below.
+  late bool _obscured = widget.obscure;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          widget.label,
           style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1),
         ),
         const SizedBox(height: 6),
         TextField(
-          controller: controller,
-          focusNode: focusNode,
-          obscureText: obscure,
-          keyboardType: numeric ? TextInputType.number : TextInputType.text,
-          inputFormatters: numeric
+          controller: widget.controller,
+          focusNode: widget.focusNode,
+          obscureText: widget.obscure && _obscured,
+          keyboardType: widget.numeric ? TextInputType.number : TextInputType.text,
+          inputFormatters: widget.numeric
               ? [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)]
               : null,
           style: AppTextStyles.body(size: 14),
-          decoration: InputDecoration(hintText: hint ?? (obscure ? '••••••••' : 'Enter username')),
-          onSubmitted: onSubmit == null ? null : (_) => onSubmit!(),
+          decoration: InputDecoration(
+            hintText: widget.hint ?? (widget.obscure ? '••••••••' : 'Enter username'),
+            // Only an obscured field (the PIN) gets the toggle -- Name
+            // passes obscure: false and never shows it.
+            suffixIcon: widget.obscure
+                ? IconButton(
+                    icon: Icon(
+                      _obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
+                    tooltip: _obscured ? 'Show PIN' : 'Hide PIN',
+                    onPressed: () => setState(() => _obscured = !_obscured),
+                  )
+                : null,
+          ),
+          onSubmitted: widget.onSubmit == null ? null : (_) => widget.onSubmit!(),
         ),
       ],
     );
