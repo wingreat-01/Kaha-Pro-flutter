@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'theme/app_theme.dart';
+import 'state/theme_provider.dart';
 import 'models/user.dart';
 import 'state/cart_provider.dart';
 import 'state/ingredient_provider.dart';
@@ -69,6 +70,8 @@ Future<void> main() async {
         // ..load() restores whatever printer was saved on this device
         // in a previous session (see PrinterProvider.load).
         ChangeNotifierProvider(create: (_) => PrinterProvider()..load()),
+        // ..load() restores the saved theme choice (light/dark/system).
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
       ],
       child: const KahaproApp(),
     ),
@@ -82,7 +85,7 @@ class KahaproApp extends StatefulWidget {
   State<KahaproApp> createState() => _KahaproAppState();
 }
 
-class _KahaproAppState extends State<KahaproApp> {
+class _KahaproAppState extends State<KahaproApp> with WidgetsBindingObserver {
   // PIN-level session — separate from the Supabase Auth session below.
   // This is who's currently clocked in at the register.
   AppUser? _loggedInUser;
@@ -98,6 +101,24 @@ class _KahaproAppState extends State<KahaproApp> {
   void initState() {
     super.initState();
     _authStream = Supabase.instance.client.auth.onAuthStateChange;
+    // Needed so "System" theme mode updates live if someone flips
+    // their OS dark/light setting while the app is open, rather than
+    // only picking it up on next launch.
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    // Only matters when the user's chosen ThemeMode.system — for
+    // Light/Dark this is a no-op rebuild. Cheap enough not to bother
+    // checking themeProvider.mode first.
+    setState(() {});
   }
 
   Future<bool> _hasStaffUsers() async {
@@ -113,58 +134,90 @@ class _KahaproAppState extends State<KahaproApp> {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+
+    // Resolve "System" down to an actual Brightness ourselves (rather
+    // than only handing ThemeMode.system to MaterialApp) because
+    // AppColors.* are plain static getters read directly by dozens of
+    // screens — they don't go through Theme.of(context), so nothing
+    // downstream of MaterialApp knows to ask it what brightness got
+    // resolved. Setting AppColors.isLight explicitly here, from the
+    // same resolution MaterialApp itself will use, keeps every screen
+    // in sync with what's actually on screen.
+    final platformBrightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final resolvedBrightness = switch (themeProvider.mode) {
+      ThemeMode.light => Brightness.light,
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.system => platformBrightness,
+    };
+    AppColors.isLight = resolvedBrightness == Brightness.light;
+
     return MaterialApp(
       title: 'MERQ',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.build(),
-      home: _loggedInUser != null
-          ? HomeShell(
-              user: _loggedInUser!,
-              onLogout: () {
-                // This clears the PIN-level session only. It does NOT
-                // call Supabase's signOut() — doing that would also
-                // drop the owner's store session and bounce the whole
-                // device back to StoreSetupScreen, which is wrong for
-                // "next staffer, same register." A real "sign out of
-                // this store" action (e.g. from Settings) is a
-                // separate, explicit control, not part of this flow.
-                setState(() => _loggedInUser = null);
-              },
-            )
-          : StreamBuilder<AuthState>(
-              stream: _authStream,
-              builder: (context, snapshot) {
-                final session = Supabase.instance.client.auth.currentSession;
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: themeProvider.mode,
+      home: KeyedSubtree(
+        // Flipping AppColors.isLight above doesn't repaint anything by
+        // itself — widgets only re-read a static getter when they
+        // actually rebuild. Keying the whole home subtree on the
+        // resolved brightness forces Flutter to tear down and rebuild
+        // every screen from scratch on a theme change, so AppColors.*
+        // values are picked up everywhere at once instead of only in
+        // whatever screen happens to be visible. Trade-off: switching
+        // themes resets navigation back to the root screen — an
+        // acceptable one-time reset for a Settings action.
+        key: ValueKey(resolvedBrightness),
+        child: _loggedInUser != null
+            ? HomeShell(
+                user: _loggedInUser!,
+                onLogout: () {
+                  // This clears the PIN-level session only. It does NOT
+                  // call Supabase's signOut() — doing that would also
+                  // drop the owner's store session and bounce the whole
+                  // device back to StoreSetupScreen, which is wrong for
+                  // "next staffer, same register." A real "sign out of
+                  // this store" action (e.g. from Settings) is a
+                  // separate, explicit control, not part of this flow.
+                  setState(() => _loggedInUser = null);
+                },
+              )
+            : StreamBuilder<AuthState>(
+                stream: _authStream,
+                builder: (context, snapshot) {
+                  final session = Supabase.instance.client.auth.currentSession;
 
-                if (session == null) {
-                  return const StoreSetupScreen();
-                }
+                  if (session == null) {
+                    return const StoreSetupScreen();
+                  }
 
-                return FutureBuilder<bool>(
-                  key: ValueKey(_staffCheckToken),
-                  future: _hasStaffUsers(),
-                  builder: (context, staffSnap) {
-                    if (staffSnap.connectionState != ConnectionState.done) {
-                      return const _RouteLoadingScreen();
-                    }
-                    if (staffSnap.hasError) {
-                      // Fails safe to the loading view rather than a
-                      // silent blank screen — a transient network blip
-                      // here shouldn't strand someone on first run.
-                      return const _RouteLoadingScreen();
-                    }
-                    if (staffSnap.data == false) {
-                      return AddSelfAsStaffScreen(
-                        onDone: () => setState(() => _staffCheckToken++),
+                  return FutureBuilder<bool>(
+                    key: ValueKey(_staffCheckToken),
+                    future: _hasStaffUsers(),
+                    builder: (context, staffSnap) {
+                      if (staffSnap.connectionState != ConnectionState.done) {
+                        return const _RouteLoadingScreen();
+                      }
+                      if (staffSnap.hasError) {
+                        // Fails safe to the loading view rather than a
+                        // silent blank screen — a transient network blip
+                        // here shouldn't strand someone on first run.
+                        return const _RouteLoadingScreen();
+                      }
+                      if (staffSnap.data == false) {
+                        return AddSelfAsStaffScreen(
+                          onDone: () => setState(() => _staffCheckToken++),
+                        );
+                      }
+                      return LoginScreen(
+                        onLogin: (user) => setState(() => _loggedInUser = user),
                       );
-                    }
-                    return LoginScreen(
-                      onLogin: (user) => setState(() => _loggedInUser = user),
-                    );
-                  },
-                );
-              },
-            ),
+                    },
+                  );
+                },
+              ),
+      ),
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../state/ingredient_provider.dart';
 import '../state/store_provider.dart';
+import '../state/theme_provider.dart';
 import 'ingredients_panel.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
@@ -14,6 +15,7 @@ import 'upgrade_screen.dart';
 import 'store_details_panel.dart';
 import 'settings/about_screen.dart';
 import 'settings/delete_account_screen.dart';
+import 'settings/theme_screen.dart';
 
 /// Settings screen — reached via the gear icon in the header. Houses
 /// app-level configuration and admin sections. Users management lives
@@ -68,12 +70,24 @@ class SettingsPanel extends StatelessWidget {
     }
   }
 
+  String _themeSubtitle(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.system:
+        return 'System';
+      case ThemeMode.dark:
+        return 'Dark';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final storeProvider = context.watch<StoreProvider>();
     final label = storeProvider.businessTypeLabel;
     final store = storeProvider.store;
     final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
+    final themeMode = context.watch<ThemeProvider>().mode;
 
     return BoundedContent(
       child: ListView(
@@ -158,6 +172,14 @@ class SettingsPanel extends StatelessWidget {
           subtitle: 'Name, address, receipt footer',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const StoreDetailsPanel()),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.brightness_6_outlined,
+          label: 'Theme',
+          subtitle: _themeSubtitle(themeMode),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ThemeScreen()),
           ),
         ),
         _SettingsRow(

@@ -4,6 +4,7 @@ import '../models/product.dart';
 import '../state/product_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
+import '../widgets/catalog_search_bar.dart';
 
 /// Real inventory list/add/edit panel — reached from Settings → Products.
 /// Shows every product with its current stock, flags anything at or
@@ -14,15 +15,31 @@ import '../widgets/bounded_content.dart';
 /// than a separate parallel list, so it can't drift out of sync with
 /// the catalog the way category names once did between RegisterScreen
 /// and ProductProvider.
-class InventoryPanel extends StatelessWidget {
+class InventoryPanel extends StatefulWidget {
   const InventoryPanel({super.key});
+
+  @override
+  State<InventoryPanel> createState() => _InventoryPanelState();
+}
+
+class _InventoryPanelState extends State<InventoryPanel> {
+  String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<ProductProvider>();
 
+    // Search filters the product list before it's grouped by category,
+    // same approach as IngredientsPanel -- suggestions below come from
+    // the full unfiltered catalog so autocomplete keeps offering every
+    // product name regardless of what the live query currently matches.
+    final query = _searchQuery.trim().toLowerCase();
+    final matching = query.isEmpty
+        ? catalog.products
+        : catalog.products.where((p) => p.name.toLowerCase().contains(query)).toList();
+
     final byCategory = <String, List<Product>>{};
-    for (final product in catalog.products) {
+    for (final product in matching) {
       byCategory.putIfAbsent(product.category, () => []).add(product);
     }
     final categories = byCategory.keys.toList()..sort();
@@ -36,6 +53,14 @@ class InventoryPanel extends StatelessWidget {
           'Inventory',
           style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, letterSpacing: 1),
         ),
+        actions: [
+          CatalogSearchBar(
+            suggestions: catalog.products.map((p) => p.name).toList(),
+            onQueryChanged: (value) => setState(() => _searchQuery = value),
+            hintText: 'Search Inventory…',
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: BoundedContent(
         child: catalog.products.isEmpty
@@ -45,28 +70,35 @@ class InventoryPanel extends StatelessWidget {
                   style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
                 ),
               )
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  for (final category in categories) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
-                      child: Text(
-                        category.toUpperCase(),
-                        style: AppTextStyles.mono(
-                          size: 11,
-                          weight: FontWeight.w700,
-                          color: AppColors.textMuted,
-                          letterSpacing: 2,
-                        ),
-                      ),
+            : matching.isEmpty
+                ? Center(
+                    child: Text(
+                      'No products match "$_searchQuery".',
+                      style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
                     ),
-                    for (final product in byCategory[category]!)
-                      _InventoryRow(product: product, catalog: catalog),
-                    const SizedBox(height: 10),
-                  ],
-                ],
-              ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      for (final category in categories) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+                          child: Text(
+                            category.toUpperCase(),
+                            style: AppTextStyles.mono(
+                              size: 11,
+                              weight: FontWeight.w700,
+                              color: AppColors.textMuted,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
+                        for (final product in byCategory[category]!)
+                          _InventoryRow(product: product, catalog: catalog),
+                        const SizedBox(height: 10),
+                      ],
+                    ],
+                  ),
       ),
     );
   }
