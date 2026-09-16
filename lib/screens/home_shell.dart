@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/user.dart';
+import '../models/store.dart';
 import '../widgets/checkout_warmup.dart';
 import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
 import 'reports_screen.dart';
 import 'settings_panel.dart';
+import 'upgrade_screen.dart';
 import 'ai_assistant_screen.dart';
 import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
@@ -204,6 +206,52 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// Compact tappable badge showing trial urgency, shown only to
+  /// admins on a free-plan store (never for basic/pro — those don't
+  /// carry a plan_expires_at at all, see Store.isExpired). This is
+  /// the one spot every admin sees on every screen, unlike the
+  /// Settings -> Plan row (buried) or the Settings icon's tooltip
+  /// (hover-only, easy to miss on mobile). Tapping it jumps straight
+  /// to UpgradeScreen — same destination as the existing Plan row.
+  ///
+  /// Amber while there's no urgency yet, switching to the same red
+  /// used for the Settings/Assistant warning dots once daysLeft <= 3
+  /// or the trial's already expired, so the color itself carries the
+  /// same "pay attention" signal as the rest of the header.
+  Widget _trialPill(BuildContext context, Store store) {
+    final daysLeft = store.trialDaysRemaining;
+    final expired = store.isExpired;
+    final urgent = expired || (daysLeft != null && daysLeft <= 3);
+    final color = urgent ? AppColors.ledgerRed : AppColors.ledAmber;
+    final label = expired
+        ? 'Trial expired'
+        : daysLeft != null
+            ? '$daysLeft day${daysLeft == 1 ? '' : 's'} left'
+            : 'Trial';
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const UpgradeScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withOpacity(0.4), width: 1),
+          ),
+          child: Text(
+            label,
+            style: AppTextStyles.mono(size: 11, weight: FontWeight.w700, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pendingCount = context.watch<TransactionProvider>().pendingCount;
@@ -252,6 +300,7 @@ class _HomeShellState extends State<HomeShell> {
         elevation: 0,
         title: Text('MERQ', style: AppTextStyles.mono(size: 16, weight: FontWeight.w700, letterSpacing: 1)),
         actions: [
+          if (_isAdmin && store != null && store.plan == 'free') _trialPill(context, store),
           if (isWideEnoughForNameLabel) ...[
             Center(
               child: Text(

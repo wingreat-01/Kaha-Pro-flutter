@@ -7,11 +7,16 @@ class Store {
   final String name;
   final String businessType; // 'food_beverage' | 'retail_hardware' | 'general'
   final String plan; // 'free' | 'basic' | 'pro' | 'expired' (manual testing value, see below)
-  final DateTime? planExpiresAt; // real trial end date -- 15 days from
+  final DateTime? planExpiresAt; // real trial end date -- 30 days from
                           // creation for free-plan stores, set server-side
                           // by the trg_set_default_trial_expiry trigger
-                          // (006_add_trial_expiry.sql). Null for paid
-                          // plans or a store this trigger hasn't touched.
+                          // (006_add_trial_expiry.sql, extended to 30 days
+                          // by 010_extend_trial_to_30_days.sql). Null for
+                          // paid plans or a store this trigger hasn't
+                          // touched. NOTE: stores created before
+                          // 2026-09-16 still have a 15-day window — the
+                          // extension to 30 days was deliberately not
+                          // backfilled onto existing stores.
   final int aiCreditsRemaining; // this cycle's remaining AI Assistant credits
   final DateTime? aiCreditsResetAt; // when the monthly credit count next resets
   // Senior Citizen / PWD discount (RA 9994 / RA 10754) feature toggle.
@@ -129,7 +134,8 @@ class Store {
   /// True when the trial-expired banner/lock should show. Two paths:
   ///  - plan == 'expired': the manual testing override (see
   ///    kahapro-subscription-plan.md) -- flip a store to this string
-  ///    via SQL to see the expired state without waiting 15 real days.
+  ///    via SQL to see the expired state without waiting 30 real days
+  ///    (15 for stores created before the 2026-09-16 extension).
   ///  - plan_expires_at has actually passed: the real trial check,
   ///    once 006_add_trial_expiry.sql's trigger has set a date.
   /// A paid plan (basic/pro) never has plan_expires_at set by that
