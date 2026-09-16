@@ -28,7 +28,7 @@ class CartBottomBar extends StatelessWidget {
               listenable: cart,
               builder: (context, _) {
                 return Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.slate,
                     borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                   ),

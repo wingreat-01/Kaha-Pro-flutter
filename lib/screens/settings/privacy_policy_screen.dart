@@ -173,7 +173,7 @@ class _SectionHeading extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 22, bottom: 8),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.slateBorder, width: 1)),
         ),
         padding: const EdgeInsets.only(top: 16),

@@ -152,7 +152,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                   onPressed: provider.status == PrinterConnectionStatus.printing ? null : _testPrint,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textPrimary,
-                    side: const BorderSide(color: AppColors.slateBorder),
+                    side: BorderSide(color: AppColors.slateBorder),
                   ),
                   child: provider.status == PrinterConnectionStatus.printing
                       ? const SizedBox(
@@ -243,7 +243,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                   onPressed: _scanning ? null : _scan,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textPrimary,
-                    side: const BorderSide(color: AppColors.slateBorder),
+                    side: BorderSide(color: AppColors.slateBorder),
                   ),
                   icon: _scanning
                       ? const SizedBox(
@@ -259,7 +259,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
               for (final device in _bluetoothResults)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.print_outlined, color: AppColors.textPrimary),
+                  leading: Icon(Icons.print_outlined, color: AppColors.textPrimary),
                   title: Text(device.name, style: AppTextStyles.body(size: 13, weight: FontWeight.w600)),
                   subtitle: Text(device.address, style: AppTextStyles.body(size: 11, color: AppColors.textSecondary)),
                   trailing: TextButton(

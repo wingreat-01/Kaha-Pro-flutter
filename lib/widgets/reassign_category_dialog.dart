@@ -132,7 +132,7 @@ class _ReassignCategoryDialogState extends State<ReassignCategoryDialog> {
                 ElevatedButton(
                   onPressed: (_saving || widget.availableCategories.isEmpty) ? null : () => _save(catalog),
                   child: _saving
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.charcoal),

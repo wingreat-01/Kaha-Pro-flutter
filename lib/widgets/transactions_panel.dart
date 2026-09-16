@@ -43,7 +43,7 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
+            colorScheme: ColorScheme.dark(
               primary: AppColors.ledAmber,
               onPrimary: AppColors.charcoal,
               surface: AppColors.slate,
@@ -122,7 +122,7 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
                         const Spacer(),
                       IconButton(
                         onPressed: () => _pickDate(allSummaries),
-                        icon: const Icon(Icons.calendar_today_outlined, color: AppColors.textSecondary, size: 18),
+                        icon: Icon(Icons.calendar_today_outlined, color: AppColors.textSecondary, size: 18),
                         tooltip: 'Jump to date',
                       ),
                     ],
@@ -220,7 +220,7 @@ class _DateFilterChip extends StatelessWidget {
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onClear,
-            child: const Icon(Icons.close, color: AppColors.textMuted, size: 15),
+            child: Icon(Icons.close, color: AppColors.textMuted, size: 15),
           ),
         ],
       ),
@@ -346,7 +346,7 @@ class _TransactionRow extends StatelessWidget {
                 constraints: const BoxConstraints(),
               )
             else
-              const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+              Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
           ],
         ),
       ),

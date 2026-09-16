@@ -154,7 +154,7 @@ class _AboutTile extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
+            Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
           ],
         ),
       ),

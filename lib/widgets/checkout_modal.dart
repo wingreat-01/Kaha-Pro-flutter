@@ -392,7 +392,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
                       const Spacer(),
                       IconButton(
                         onPressed: () => Navigator.of(context).pop(CheckoutResult.cancelled),
-                        icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
+                        icon: Icon(Icons.close, color: AppColors.textMuted, size: 20),
                         splashRadius: 18,
                       ),
                     ],

@@ -301,7 +301,7 @@ class _HomeShellState extends State<HomeShell> {
               showWarningDot: planNeedsAttention,
             ),
           IconButton(
-            icon: const Icon(Icons.logout, color: AppColors.textSecondary),
+            icon: Icon(Icons.logout, color: AppColors.textSecondary),
             tooltip: 'Logout',
             onPressed: widget.onLogout,
           ),

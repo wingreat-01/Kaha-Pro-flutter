@@ -65,7 +65,7 @@ class AboutPanel extends StatelessWidget {
                 label: 'Store ID',
                 value: store.id,
                 trailing: IconButton(
-                  icon: const Icon(Icons.copy, size: 16, color: AppColors.textMuted),
+                  icon: Icon(Icons.copy, size: 16, color: AppColors.textMuted),
                   onPressed: () => _copyStoreId(context, store.id),
                   tooltip: 'Copy',
                 ),
@@ -176,7 +176,7 @@ class _LinkRow extends StatelessWidget {
             Icon(icon, size: 18, color: AppColors.ledAmber),
             const SizedBox(width: 12),
             Expanded(child: Text(label, style: AppTextStyles.body(size: 13, weight: FontWeight.w600))),
-            const Icon(Icons.open_in_new, size: 15, color: AppColors.textMuted),
+            Icon(Icons.open_in_new, size: 15, color: AppColors.textMuted),
           ],
         ),
       ),

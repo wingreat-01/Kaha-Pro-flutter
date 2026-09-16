@@ -179,7 +179,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       initialDateRange: _range,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.dark(
+          colorScheme: ColorScheme.dark(
             primary: AppColors.ledAmber,
             surface: AppColors.slate,
             onSurface: AppColors.textPrimary,
@@ -631,7 +631,7 @@ class _CashierBreakdown extends StatelessWidget {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              border: isLast ? null : const Border(bottom: BorderSide(color: AppColors.slateBorder)),
+              border: isLast ? null : Border(bottom: BorderSide(color: AppColors.slateBorder)),
             ),
             child: Row(
               children: [

@@ -80,7 +80,7 @@ class _ReceiptPreviewScreenState extends State<ReceiptPreviewScreen> {
                       onPressed: printerStatus == PrinterConnectionStatus.printing ? null : _handlePrint,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.textPrimary,
-                        side: const BorderSide(color: AppColors.slateBorder),
+                        side: BorderSide(color: AppColors.slateBorder),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: printerStatus == PrinterConnectionStatus.printing

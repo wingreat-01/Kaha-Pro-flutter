@@ -57,13 +57,13 @@ class TransactionDetailModal extends StatelessWidget {
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
+                      icon: Icon(Icons.close, color: AppColors.textMuted, size: 20),
                       splashRadius: 18,
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Divider(color: AppColors.slateBorder, height: 1),
+                Divider(color: AppColors.slateBorder, height: 1),
                 const SizedBox(height: 8),
                 Flexible(
                   child: ListView.separated(
