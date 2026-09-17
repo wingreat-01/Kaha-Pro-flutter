@@ -113,7 +113,7 @@ class BillingProvider extends ChangeNotifier {
   /// product in Play Console yet (e.g. yearly not set up).
   String? _offerTokenFor(ProductDetails product, String basePlanId) {
     if (product is! GooglePlayProductDetails) return null;
-    for (final offer in product.subscriptionOfferDetails ?? const []) {
+    for (final offer in product.productDetails.subscriptionOfferDetails ?? const []) {
       if (offer.basePlanId == basePlanId) return offer.offerToken;
     }
     return null;
