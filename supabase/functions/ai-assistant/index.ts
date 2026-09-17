@@ -71,6 +71,18 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
+// Purchase tokens are long-lived credentials, not safe to store in
+// plain text in a log table -- this is only for idempotency / lookup
+// purposes (see purchase_verifications' comment), not for re-verifying
+// the purchase later, so a one-way hash is enough.
+async function hashToken(token: string): Promise<string> {
+  const data = new TextEncoder().encode(token);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 let cachedAuth: GoogleAuth | null = null;
 function getGoogleAuth(): GoogleAuth {
   if (!cachedAuth) {
@@ -213,6 +225,22 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Google's subscriptionsv2.get response sets testPurchase to a
+  // (usually empty) object for License Tester / sandbox purchases,
+  // and leaves it null/absent for a real paying customer -- this is
+  // the only signal that distinguishes the two, since everything else
+  // about a test purchase (subscriptionState, lineItems, etc.) looks
+  // identical to a real one. Per the earlier decision, this does NOT
+  // change how the purchase is handled (testers get the same
+  // plan/credits as real customers) -- it's recorded purely so the
+  // owner can tell them apart later in purchase_verifications, not
+  // used to branch any logic above or below this line.
+  const isTestPurchase = purchase.testPurchase != null;
+  console.log(
+    `[verify-purchase] ${isTestPurchase ? 'TEST' : 'real'} purchase verified — ` +
+      `store=${storeId} product=${productId} state=${purchase.subscriptionState}`,
+  );
+
   // Acknowledge within 3 days of the initial purchase is required by
   // Play policy or the purchase is automatically refunded --
   // subscriptionId is omitted per Google's May 2025 change (no longer
@@ -277,6 +305,24 @@ Deno.serve(async (req: Request) => {
     // upgraded and correct; credits will still catch up on the next
     // scheduled reset even if this immediate top-up failed.
     console.error('Failed to top up credits after plan upgrade (non-fatal):', creditError);
+  }
+
+  // Log this verification -- purely for the owner to monitor testers
+  // vs real subscribers later (see purchase_verifications' comment);
+  // never read back or acted on anywhere else in this function, so a
+  // failure here doesn't affect the response.
+  const tokenHash = await hashToken(purchaseToken);
+  const { error: logError } = await serviceClient.from('purchase_verifications').insert({
+    store_id: storeId,
+    product_id: productId,
+    plan: targetPlan,
+    subscription_state: purchase.subscriptionState,
+    is_test_purchase: isTestPurchase,
+    order_id: purchase.latestOrderId ?? null,
+    purchase_token_hash: tokenHash,
+  });
+  if (logError) {
+    console.error('Failed to write purchase_verifications row (non-fatal):', logError);
   }
 
   return jsonResponse({ ok: true, plan: targetPlan }, 200);
