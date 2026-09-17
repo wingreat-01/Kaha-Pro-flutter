@@ -14,6 +14,7 @@ import 'state/user_provider.dart';
 import 'state/ai_assistant_provider.dart';
 import 'state/payment_method_provider.dart';
 import 'state/printer_provider.dart';
+import 'state/billing_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/store_setup_screen.dart';
 import 'screens/add_self_as_staff_screen.dart';
@@ -44,17 +45,6 @@ Future<void> main() async {
     ),
   );
 
-  // TEMP — for curl-testing the ai-assistant Edge Function's credit
-  // gate. Prints the access token to the terminal on any auth state
-  // change (sign-in, or a saved session restoring on app start).
-  // Remove this block once done testing.
-  Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-    final session = data.session;
-    if (session != null) {
-      print('ACCESS TOKEN: ${session.accessToken}');
-    }
-  });
-
   runApp(
     MultiProvider(
       providers: [
@@ -72,6 +62,11 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => PrinterProvider()..load()),
         // ..load() restores the saved theme choice (light/dark/system).
         ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
+        // Not initialized here (no ..init()) -- UpgradeScreen calls
+        // init() itself on open, since querying Play Console product
+        // details on every app launch (even for users who never touch
+        // Settings > Plan) would be wasted work for most sessions.
+        ChangeNotifierProvider(create: (_) => BillingProvider()),
       ],
       child: const KahaproApp(),
     ),

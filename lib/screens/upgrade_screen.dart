@@ -1,31 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/store_provider.dart';
+import '../state/billing_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
 
 /// Static plan matrix, mirrors kahapro-subscription-plan.md's Free/
-/// Basic/Pro table. Deliberately hardcoded here rather than fetched --
-/// this screen is a picker, not a source of truth; the real gating
-/// logic lives server-side (current_store_plan(), consume_ai_credit())
-/// and doesn't read anything from this file.
+/// Starter/Basic/Pro table. Deliberately hardcoded here rather than
+/// fetched -- this screen is a picker, not a source of truth; the
+/// real gating logic lives server-side (product_limit(),
+/// ai_credit_allotment(), consume_ai_credit()) and doesn't read
+/// anything from this file. subscriptionId is null for the Free
+/// Trial (not purchasable) and set for Starter/Basic/Pro, matching
+/// the product IDs BillingProvider queries from Play Console.
 class _PlanInfo {
   final String id; // matches stores.plan values
+  final String? subscriptionId; // Play Console subscription product ID, null = not purchasable
   final String name;
-  final String price;
-  final String? priceNote;
+  final String monthlyPrice;
+  final String? yearlyPrice;
   final List<String> features;
   // Free-trial-only explanatory line shown under its features instead
-  // of a "Choose" button, since the trial isn't a plan you can select
+  // of Choose buttons, since the trial isn't a plan you can select
   // again once it's over (see UpgradeScreen doc comment) -- null for
-  // Basic/Pro, which always get a normal Choose button.
+  // Starter/Basic/Pro, which always get real purchase buttons.
   final String? footnote;
 
   const _PlanInfo({
     required this.id,
+    this.subscriptionId,
     required this.name,
-    required this.price,
-    this.priceNote,
+    required this.monthlyPrice,
+    this.yearlyPrice,
     required this.features,
     this.footnote,
   });
@@ -35,26 +41,27 @@ const List<_PlanInfo> _kPlans = [
   _PlanInfo(
     id: 'free',
     name: 'Free Trial',
-    price: '₱0',
-    priceNote: 'for 15 days',
+    monthlyPrice: '₱0',
+    yearlyPrice: null,
     // Deliberately mirrors Pro's feature list -- the trial should
     // give full run of the app, not a capped preview, so an owner
     // can actually decide whether it's worth paying for based on
     // real use rather than an artificially limited sample.
     features: [
-      'Everything in Pro, on us for 15 days',
+      'Everything in Pro, on us for 30 days',
       'Unlimited staff accounts',
       'Unlimited transaction history',
       '10 AI assistant credits / month',
       'Unlimited products',
     ],
-    footnote: 'One-time trial — pick Basic or Pro once it ends to keep going.',
+    footnote: 'One-time trial — pick a plan below once it ends to keep going.',
   ),
   _PlanInfo(
     id: 'starter',
+    subscriptionId: kStarterSubscriptionId,
     name: 'Starter',
-    price: '₱190/mo',
-    priceNote: 'or ₱1,900/yr',
+    monthlyPrice: '₱190/mo',
+    yearlyPrice: '₱1,900/yr',
     features: [
       '1 staff account',
       '30 days transaction history',
@@ -64,9 +71,10 @@ const List<_PlanInfo> _kPlans = [
   ),
   _PlanInfo(
     id: 'basic',
+    subscriptionId: kBasicSubscriptionId,
     name: 'Basic',
-    price: '₱290/mo',
-    priceNote: 'or ₱2,900/yr',
+    monthlyPrice: '₱290/mo',
+    yearlyPrice: '₱2,900/yr',
     features: [
       '5 staff accounts',
       '90 days transaction history',
@@ -76,9 +84,10 @@ const List<_PlanInfo> _kPlans = [
   ),
   _PlanInfo(
     id: 'pro',
+    subscriptionId: kProSubscriptionId,
     name: 'Pro',
-    price: '₱490/mo',
-    priceNote: 'or ₱4,900/yr',
+    monthlyPrice: '₱490/mo',
+    yearlyPrice: '₱4,900/yr',
     features: [
       'Unlimited staff accounts',
       'Unlimited transaction history',
@@ -96,30 +105,92 @@ const List<_PlanInfo> _kPlans = [
 /// trial-expired state is what makes upgrading feel *urgent*, not what
 /// makes it *possible*.
 ///
-/// No real payment processing yet (Google Play Billing is a later,
-/// separate build step) -- choosing a plan here just confirms intent
-/// and tells the owner support will follow up, rather than silently
-/// doing nothing or pretending to charge a card.
-class UpgradeScreen extends StatelessWidget {
+/// Choosing Monthly or Yearly on a paid plan now launches Google's
+/// real purchase sheet via BillingProvider -- there is no more
+/// "we'll reach out" placeholder flow. What happens AFTER a purchase
+/// comes back as successful (updating stores.plan) still depends on
+/// a server-side verification Edge Function that hasn't been built
+/// yet -- see BillingProvider._verifyAndActivate's doc comment. Until
+/// that exists, a real purchase can complete in the Play Store sense
+/// without stores.plan actually changing -- expected during this
+/// build phase, not a bug in this screen.
+class UpgradeScreen extends StatefulWidget {
   const UpgradeScreen({super.key});
 
-  void _choosePlan(BuildContext context, _PlanInfo plan) {
-    showDialog(
+  @override
+  State<UpgradeScreen> createState() => _UpgradeScreenState();
+}
+
+class _UpgradeScreenState extends State<UpgradeScreen> {
+  String? _lastShownError;
+
+  @override
+  void initState() {
+    super.initState();
+    // BillingProvider is registered once in main.dart's MultiProvider
+    // (like PrinterProvider/ThemeProvider) -- init() here is safe to
+    // call every time this screen opens; it's cheap to re-run
+    // (mostly a product-details re-query) and guarantees products are
+    // fresh if this is the first screen that's touched billing this
+    // session.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<BillingProvider>().init();
+    });
+  }
+
+  void _maybeShowPurchaseError(BuildContext context, BillingProvider billing) {
+    final error = billing.purchaseError;
+    if (error != null && error != _lastShownError) {
+      _lastShownError = error;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppColors.ledgerRed),
+        );
+      });
+    } else if (error == null) {
+      _lastShownError = null;
+    }
+  }
+
+  void _choosePeriod(BuildContext context, _PlanInfo plan) {
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.slate,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text('${plan.name} plan selected', style: AppTextStyles.body(size: 15, weight: FontWeight.w700)),
-        content: Text(
-          "Thanks! This doesn't charge anything yet -- we'll reach out shortly to help activate the ${plan.name} plan on your account.",
-          style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber)),
+      backgroundColor: AppColors.slate,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${plan.name} — choose billing', style: AppTextStyles.body(size: 15, weight: FontWeight.w700)),
+              const SizedBox(height: 16),
+              _PeriodOption(
+                label: 'Monthly',
+                price: plan.monthlyPrice,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  context.read<BillingProvider>().buySubscription(plan.subscriptionId!, BillingPeriod.monthly);
+                },
+              ),
+              if (plan.yearlyPrice != null) ...[
+                const SizedBox(height: 10),
+                _PeriodOption(
+                  label: 'Yearly',
+                  price: plan.yearlyPrice!,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    context.read<BillingProvider>().buySubscription(plan.subscriptionId!, BillingPeriod.yearly);
+                  },
+                ),
+              ],
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -127,6 +198,9 @@ class UpgradeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<StoreProvider>().store;
+    final billing = context.watch<BillingProvider>();
+    _maybeShowPurchaseError(context, billing);
+
     // A store manually flipped to the 'expired' testing value (see
     // Store.isExpired) isn't really "on" any real plan -- treat it as
     // free for the purpose of highlighting the current card, same as
@@ -159,12 +233,55 @@ class UpgradeScreen extends StatelessWidget {
                 ),
               ),
             ],
+            if (billing.loadError != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.textMuted.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(billing.loadError!, style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+              ),
+            ],
             for (final plan in _kPlans)
               _PlanCard(
                 plan: plan,
                 isCurrent: plan.id == currentPlanId,
-                onChoose: () => _choosePlan(context, plan),
+                purchaseInProgress: billing.purchaseInProgress,
+                onChoosePeriod: () => _choosePeriod(context, plan),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PeriodOption extends StatelessWidget {
+  final String label;
+  final String price;
+  final VoidCallback onTap;
+
+  const _PeriodOption({required this.label, required this.price, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.charcoal,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.slateBorder, width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+            Text(price, style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber)),
           ],
         ),
       ),
@@ -175,9 +292,15 @@ class UpgradeScreen extends StatelessWidget {
 class _PlanCard extends StatelessWidget {
   final _PlanInfo plan;
   final bool isCurrent;
-  final VoidCallback onChoose;
+  final bool purchaseInProgress;
+  final VoidCallback onChoosePeriod;
 
-  const _PlanCard({required this.plan, required this.isCurrent, required this.onChoose});
+  const _PlanCard({
+    required this.plan,
+    required this.isCurrent,
+    required this.purchaseInProgress,
+    required this.onChoosePeriod,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -218,10 +341,13 @@ class _PlanCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(plan.price, style: AppTextStyles.mono(size: 20, weight: FontWeight.w700, color: AppColors.ledAmber)),
-              if (plan.priceNote != null) ...[
+              Text(plan.monthlyPrice, style: AppTextStyles.mono(size: 20, weight: FontWeight.w700, color: AppColors.ledAmber)),
+              if (plan.yearlyPrice != null) ...[
                 const SizedBox(width: 8),
-                Text(plan.priceNote!, style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+                Text('or ${plan.yearlyPrice}', style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+              ] else if (plan.id == 'free') ...[
+                const SizedBox(width: 8),
+                Text('for 30 days', style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
               ],
             ],
           ),
@@ -250,7 +376,7 @@ class _PlanCard extends StatelessWidget {
               ),
             )
           else if (plan.footnote != null)
-            // Free trial, not currently on it -- no "Choose" button;
+            // Free trial, not currently on it -- no purchase button;
             // it's a one-time onboarding period, not a plan you can
             // switch back to (see UpgradeScreen doc comment).
             Text(plan.footnote!, style: AppTextStyles.body(size: 12, color: AppColors.textMuted))
@@ -258,8 +384,14 @@ class _PlanCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: onChoose,
-                child: Text('Choose ${plan.name}', style: AppTextStyles.body(size: 13, weight: FontWeight.w700)),
+                onPressed: purchaseInProgress ? null : onChoosePeriod,
+                child: purchaseInProgress
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text('Choose ${plan.name}', style: AppTextStyles.body(size: 13, weight: FontWeight.w700)),
               ),
             ),
         ],
