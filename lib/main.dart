@@ -24,7 +24,7 @@ import 'config/supabase_config.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Phase A of the Supabase track: just establishing the connection.
+  // Phase A of the Supabase track: just establishing the connection.cd
   // ProductProvider/CartProvider/TransactionProvider/UserProvider are
   // still in-memory below — wiring those to real Supabase tables is
   // Phases D-G, not this step.
