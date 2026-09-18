@@ -130,7 +130,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 Icon(Icons.auto_awesome, size: 16, color: AppColors.ledAmber),
                 const SizedBox(width: 8),
                 Text(
-                  'AI ASSISTANT',
+                  'PIA BUSINESS ASSISTANT',
                   style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, letterSpacing: 1),
                 ),
                 const Spacer(),
