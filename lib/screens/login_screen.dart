@@ -149,10 +149,15 @@ class _LoginScreenState extends State<LoginScreen> {
       final ingredientProvider = context.read<IngredientProvider>();
       unawaited(
         context.read<TransactionProvider>().syncPending(
-              deductStock: (items) async {
+              deductStock: (items, {reference, cashierName}) async {
                 await productProvider.deductStockForLineItems(items);
                 try {
-                  await recipeProvider.deductForLineItems(items, ingredientProvider);
+                  await recipeProvider.deductForLineItems(
+                    items,
+                    ingredientProvider,
+                    reference: reference,
+                    staffName: cashierName,
+                  );
                 } catch (_) {
                   // Swallowed deliberately, same reasoning as
                   // checkout_modal.dart's live-sale deduction —

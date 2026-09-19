@@ -5,6 +5,7 @@ import '../state/ingredient_provider.dart';
 import '../state/store_provider.dart';
 import '../state/theme_provider.dart';
 import 'ingredients_panel.dart';
+import 'inventory_movements_panel.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'categories_panel.dart';
@@ -141,7 +142,7 @@ class SettingsPanel extends StatelessWidget {
           label: 'Products',
           subtitle: 'Manage the full catalog & stock levels',
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const InventoryPanel()),
+            MaterialPageRoute(builder: (_) => InventoryPanel(staffName: staffName)),
           ),
         ),
         _SettingsRow(
@@ -153,6 +154,14 @@ class SettingsPanel extends StatelessWidget {
           badgeCount: lowStockCount,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => IngredientsPanel(staffId: staffId, staffName: staffName)),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.swap_vert,
+          label: 'Inventory Movements',
+          subtitle: 'Stock going out and coming in',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const InventoryMovementsPanel()),
           ),
         ),
         const SizedBox(height: 24),

@@ -373,7 +373,14 @@ class TransactionProvider extends ChangeNotifier {
   /// offline, by design — this is where a queued sale's stock
   /// deduction actually lands, once connectivity returns).
   Future<void> syncPending({
-    Future<void> Function(List<TransactionLineItem> items)? deductStock,
+    // reference/cashierName are the synced sale's real transaction
+    // number and cashier, so stock-movement log rows written by this
+    // callback can point back at the sale.
+    Future<void> Function(
+      List<TransactionLineItem> items, {
+      String? reference,
+      String? cashierName,
+    })? deductStock,
   }) async {
     if (_pendingQueue.isEmpty) return;
 
@@ -418,7 +425,11 @@ class TransactionProvider extends ChangeNotifier {
 
         if (deductStock != null) {
           try {
-            await deductStock(pending.items);
+            await deductStock(
+              pending.items,
+              reference: synced.transactionNumber,
+              cashierName: synced.cashierName,
+            );
           } catch (_) {
             // The sale itself is synced and stays synced even if this
             // fails — better to keep a recorded sale with possibly

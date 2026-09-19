@@ -219,6 +219,28 @@ class IngredientProvider extends ChangeNotifier {
         .toList();
   }
 
+  /// Store-wide movement history for a date range, newest first --
+  /// backs the Inventory Movements screen. [from] is inclusive and
+  /// [to] exclusive. Capped at [limit] rows; the caller can tell the
+  /// list was cut off when it gets exactly [limit] back.
+  Future<List<IngredientStockMovement>> loadMovements({
+    required DateTime from,
+    required DateTime to,
+    int limit = 1000,
+  }) async {
+    final rows = await _client
+        .from('ingredient_stock_movements')
+        .select()
+        .gte('created_at', from.toUtc().toIso8601String())
+        .lt('created_at', to.toUtc().toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(limit);
+
+    return (rows as List)
+        .map((r) => IngredientStockMovement.fromRow(r as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Checkout-time deduction — deliberately does NOT clamp at zero the
   /// way [adjustStock]/[setStock] do. Those two are manual owner
   /// corrections (the +/- buttons and the stock dialog in the
@@ -235,12 +257,38 @@ class IngredientProvider extends ChangeNotifier {
   /// update per ingredient, same reasoning as
   /// ProductProvider.deductStockForSale's per-line-item loop — fine at
   /// today's single-till sale volume.
-  Future<void> deductStockForSale(Map<String, double> deductions) async {
+  ///
+  /// Each deduction also writes a 'sale' row to
+  /// ingredient_stock_movements (best-effort, same as
+  /// [recordManualAdjustment]) so it shows up in Inventory Movements.
+  /// [reference] is the sale's transaction number and [staffName] the
+  /// cashier; both are optional and just left blank in the log when a
+  /// caller doesn't have them.
+  Future<void> deductStockForSale(
+    Map<String, double> deductions, {
+    String? reference,
+    String? staffName,
+  }) async {
     for (final entry in deductions.entries) {
       final index = _ingredients.indexWhere((i) => i.id == entry.key);
       if (index < 0) continue; // ingredient was deleted after the recipe was set up
       final next = _ingredients[index].stockQuantity - entry.value;
       await _writeStock(entry.key, index, next);
+
+      try {
+        await _client.from('ingredient_stock_movements').insert({
+          'ingredient_id': entry.key,
+          'delta': -entry.value,
+          'reason': 'Sale',
+          'staff_name': staffName,
+          'reference': reference,
+          'source': 'sale',
+        });
+      } catch (_) {
+        // Swallowed deliberately -- the stock change above is what
+        // matters; a missing log row just means this one deduction
+        // won't show in history.
+      }
     }
   }
 }

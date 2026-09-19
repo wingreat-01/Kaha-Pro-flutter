@@ -42,6 +42,10 @@ class Product {
                       // sale, just displayed as "1 sack" instead of "1 pc".
   final String? unitLabel; // free-text label, only used when unit == 'custom'
                       // (e.g. "roll", "bundle", "meter")
+  final double? costPerUnit; // what one unit costs the store (optional) --
+                              // e.g. what a bottle of water costs you to
+                              // buy. Null = not set yet. Same idea as
+                              // Ingredient.costPerUnit.
   final List<ProductVariant> variants; // optional sizes (e.g. Medium/Large/
                           // Grande), each with its own name + price. Empty
                           // by default, meaning the product just uses its
@@ -61,6 +65,7 @@ class Product {
     this.trackStock = false,
     this.unit = 'pc',
     this.unitLabel,
+    this.costPerUnit,
     this.variants = const [],
   });
 
@@ -90,6 +95,8 @@ class Product {
     bool? trackStock,
     String? unit,
     String? unitLabel,
+    double? costPerUnit,
+    bool clearCostPerUnit = false, // true = set cost back to "not set"
     List<ProductVariant>? variants,
   }) {
     return Product(
@@ -104,6 +111,7 @@ class Product {
       trackStock: trackStock ?? this.trackStock,
       unit: unit ?? this.unit,
       unitLabel: unitLabel ?? this.unitLabel,
+      costPerUnit: clearCostPerUnit ? null : (costPerUnit ?? this.costPerUnit),
       variants: variants ?? this.variants,
     );
   }

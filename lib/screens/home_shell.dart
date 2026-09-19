@@ -94,10 +94,15 @@ class _HomeShellState extends State<HomeShell> {
     final ingredientProvider = context.read<IngredientProvider>();
     _syncingFromConnectivity = true;
     transactionProvider
-        .syncPending(deductStock: (items) async {
+        .syncPending(deductStock: (items, {reference, cashierName}) async {
           await productProvider.deductStockForLineItems(items);
           try {
-            await recipeProvider.deductForLineItems(items, ingredientProvider);
+            await recipeProvider.deductForLineItems(
+              items,
+              ingredientProvider,
+              reference: reference,
+              staffName: cashierName,
+            );
           } catch (_) {
             // Swallowed deliberately, same reasoning as login_screen.dart's
             // sync call — negative-stock policy is allow/no-warning, and a

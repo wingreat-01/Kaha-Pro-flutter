@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
+import '../models/product_stock_movement.dart';
 import '../models/product_variant.dart';
 import '../models/transaction.dart';
 
@@ -134,13 +135,7 @@ class ProductProvider extends ChangeNotifier {
           bytes,
           fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
         );
-    final publicUrl = _client.storage.from(_imageBucket).getPublicUrl(path);
-    // The path is identical on every re-upload (upsert), so the public
-    // URL is too — and both Flutter's in-memory image cache and the
-    // Supabase CDN key on the URL, which means a replaced photo would
-    // keep showing the old one. A changing version param makes each
-    // upload a new URL (the file itself is still overwritten in place).
-    return '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
+    return _client.storage.from(_imageBucket).getPublicUrl(path);
   }
 
   /// Fetches this store's categories and products. Call once, right
@@ -220,6 +215,7 @@ class ProductProvider extends ChangeNotifier {
       trackStock: row['track_stock'] as bool? ?? false,
       unit: row['unit'] as String? ?? 'pc',
       unitLabel: row['unit_label'] as String?,
+      costPerUnit: (row['cost_per_unit'] as num?)?.toDouble(),
       variants: variants,
     );
   }
@@ -462,6 +458,7 @@ class ProductProvider extends ChangeNotifier {
       trackStock: resolvedTrackStock,
       unit: resolvedUnit,
       unitLabel: resolvedUnitLabel,
+      costPerUnit: previous.costPerUnit,
       variants: previous.variants,
     );
     notifyListeners();
@@ -679,18 +676,89 @@ class ProductProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> adjustStock(String id, int delta) async {
+  /// Adds/subtracts stock. Manual changes (the +/- buttons in
+  /// Inventory) are also written to product_stock_movements so they
+  /// show up in Inventory Movements. Checkout deductions pass
+  /// `logMovement: false` -- sales already live in Transactions, and
+  /// Inventory Movements reads them from there rather than keeping a
+  /// second copy.
+  Future<void> adjustStock(
+    String id,
+    int delta, {
+    String reason = 'Manual adjustment',
+    String? staffName,
+    String? note,
+    bool logMovement = true,
+  }) async {
     final index = _products.indexWhere((p) => p.id == id);
     if (index < 0) return;
-    final current = _products[index].stockQty;
+    final product = _products[index];
+    final current = product.stockQty;
     final next = (current + delta) < 0 ? 0 : current + delta;
-    return _writeStock(id, index, next);
+    await _writeStock(id, index, next);
+    if (logMovement) {
+      await _logMovement(product, next - current, reason: reason, staffName: staffName, note: note);
+    }
   }
 
-  Future<void> setStock(String id, int quantity) async {
+  /// Sets stock to an exact count (Inventory's stock dialog). Logged
+  /// as the difference from the previous count.
+  Future<void> setStock(String id, int quantity, {String? staffName}) async {
     final index = _products.indexWhere((p) => p.id == id);
     if (index < 0) return;
-    return _writeStock(id, index, quantity < 0 ? 0 : quantity);
+    final product = _products[index];
+    final next = quantity < 0 ? 0 : quantity;
+    await _writeStock(id, index, next);
+    await _logMovement(product, next - product.stockQty, reason: 'Stock count', staffName: staffName);
+  }
+
+  /// Best-effort audit row for a manual stock change -- same idea as
+  /// IngredientProvider.recordManualAdjustment: a failed log write
+  /// never undoes the real stock change. Name and unit are stored as
+  /// snapshots so history still reads correctly if the product is
+  /// later renamed or deleted.
+  Future<void> _logMovement(
+    Product product,
+    int delta, {
+    required String reason,
+    String? staffName,
+    String? note,
+  }) async {
+    if (delta == 0) return;
+    try {
+      await _client.from('product_stock_movements').insert({
+        'product_id': product.id,
+        'product_name': product.name,
+        'unit': product.unitDisplay,
+        'delta': delta,
+        'reason': reason,
+        'note': note,
+        'staff_name': staffName,
+      });
+    } catch (_) {
+      // Swallowed deliberately -- see doc comment above.
+    }
+  }
+
+  /// Manual product stock movements for a date range, newest first --
+  /// backs the Inventory Movements screen. [from] inclusive, [to]
+  /// exclusive.
+  Future<List<ProductStockMovement>> loadMovements({
+    required DateTime from,
+    required DateTime to,
+    int limit = 1000,
+  }) async {
+    final rows = await _client
+        .from('product_stock_movements')
+        .select()
+        .gte('created_at', from.toUtc().toIso8601String())
+        .lt('created_at', to.toUtc().toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(limit);
+
+    return (rows as List)
+        .map((r) => ProductStockMovement.fromRow(r as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> _writeStock(String id, int index, int next) async {
@@ -716,7 +784,7 @@ class ProductProvider extends ChangeNotifier {
   Future<void> deductStockForSale(List<CartItem> soldItems) async {
     for (final item in soldItems) {
       if (!item.product.trackStock) continue;
-      await adjustStock(item.product.id, -item.quantity);
+      await adjustStock(item.product.id, -item.quantity, logMovement: false);
     }
   }
 
@@ -731,7 +799,27 @@ class ProductProvider extends ChangeNotifier {
       if (item.productId.isEmpty) continue; // product was deleted before this synced
       final matches = _products.where((p) => p.id == item.productId);
       if (matches.isEmpty || !matches.first.trackStock) continue;
-      await adjustStock(item.productId, -item.quantity);
+      await adjustStock(item.productId, -item.quantity, logMovement: false);
+    }
+  }
+
+  /// Sets what one unit of this product costs the store, or clears it
+  /// when [cost] is null ("not set"). Optimistic with rollback, same as
+  /// [setLowStockThreshold]. Negative values are clamped to 0.
+  Future<void> setCostPerUnit(String id, double? cost) async {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index < 0) return;
+    final previous = _products[index];
+    final next = (cost != null && cost < 0) ? 0.0 : cost;
+    _products[index] = previous.copyWith(costPerUnit: next, clearCostPerUnit: next == null);
+    notifyListeners();
+
+    try {
+      await _client.from('products').update({'cost_per_unit': next}).eq('id', id);
+    } catch (e) {
+      _products[index] = previous;
+      notifyListeners();
+      rethrow;
     }
   }
 

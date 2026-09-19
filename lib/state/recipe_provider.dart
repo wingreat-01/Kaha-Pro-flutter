@@ -193,11 +193,17 @@ class RecipeProvider extends ChangeNotifier {
   /// BuildContext of its own to read from.
   Future<void> deductForLineItems(
     List<TransactionLineItem> items,
-    IngredientProvider ingredients,
-  ) async {
+    IngredientProvider ingredients, {
+    String? reference,
+    String? staffName,
+  }) async {
     final deductions = await computeDeductionsForLineItems(items);
     if (deductions.isNotEmpty) {
-      await ingredients.deductStockForSale(deductions);
+      await ingredients.deductStockForSale(
+        deductions,
+        reference: reference,
+        staffName: staffName,
+      );
     }
   }
 

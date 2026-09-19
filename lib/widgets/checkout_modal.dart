@@ -295,7 +295,14 @@ class _CheckoutModalState extends State<CheckoutModal> {
         final deductions =
             await context.read<RecipeProvider>().computeDeductionsForSale(soldItems);
         if (deductions.isNotEmpty) {
-          await context.read<IngredientProvider>().deductStockForSale(deductions);
+          await context.read<IngredientProvider>().deductStockForSale(
+                deductions,
+                // A sale queued offline has no real number yet -- the
+                // sync path (TransactionProvider.syncPending) logs it
+                // with the real one once it goes through.
+                reference: result.isPending ? null : result.transactionNumber,
+                staffName: widget.cashierName,
+              );
         }
       } catch (_) {
         // Swallowed deliberately — negative-stock policy is allow, no

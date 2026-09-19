@@ -11,6 +11,7 @@ class IngredientStockMovement {
   final String? note;
   final String? staffName;
   final String source; // 'manual' | 'sale'
+  final String? reference; // e.g. the sale's transaction number ("#00012"); null for manual changes
   final DateTime createdAt;
 
   const IngredientStockMovement({
@@ -21,6 +22,7 @@ class IngredientStockMovement {
     this.note,
     this.staffName,
     required this.source,
+    this.reference,
     required this.createdAt,
   });
 
@@ -33,6 +35,7 @@ class IngredientStockMovement {
       note: row['note'] as String?,
       staffName: row['staff_name'] as String?,
       source: row['source'] as String? ?? 'manual',
+      reference: row['reference'] as String?,
       createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
     );
   }
