@@ -76,9 +76,9 @@ class Currencies {
     code: 'USD',
     symbol: r'$',
     name: 'US Dollar',
-    bills: [1, 5, 10, 20, 50, 100],
-    stackStep: 10,
-    roundUpSteps: [5, 10, 20],
+    bills: [10, 20, 50, 100, 500, 1000],
+    stackStep: 100,
+    roundUpSteps: [50, 100, 500],
   );
 
   static const eur = Currency(
