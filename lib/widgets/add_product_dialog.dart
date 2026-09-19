@@ -147,7 +147,15 @@ class _AddProductDialogState extends State<AddProductDialog> {
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
-      setState(() => _imageBytes = bytes);
+      if (!mounted) return;
+      setState(() {
+        _imageBytes = bytes;
+        _error = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = "Couldn't open your photos. Please try again.");
+      }
     } finally {
       if (mounted) setState(() => _pickingImage = false);
     }
@@ -198,8 +206,21 @@ class _AddProductDialogState extends State<AddProductDialog> {
   Widget build(BuildContext context) {
     if (_atLimit) return _buildLimitReachedDialog(context);
 
+    // Phones: nearly full width (8px margin each side). Tablets/laptops:
+    // cap the form at _maxDialogWidth and center it, otherwise the
+    // fields stretch across the whole screen and look unprofessional.
+    // Done via insetPadding rather than wrapping the child, so the
+    // widget tree below stays untouched.
+    const maxDialogWidth = 560.0;
+    const minSideMargin = 8.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalInset = screenWidth > maxDialogWidth + (minSideMargin * 2)
+        ? (screenWidth - maxDialogWidth) / 2
+        : minSideMargin;
+
     return Dialog(
       backgroundColor: AppColors.slate,
+      insetPadding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -271,11 +292,18 @@ class _AddProductDialogState extends State<AddProductDialog> {
                               child: Text('Remove photo', style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed)),
                             ),
                           )
-                        : Text(
-                            _existingImageUrl != null
-                                ? 'Tap to replace photo'
-                                : 'Overrides the emoji placeholder',
-                            style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
+                        : GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _pickImage,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              child: Text(
+                                _existingImageUrl != null
+                                    ? 'Tap to replace photo'
+                                    : 'Overrides the emoji placeholder',
+                                style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
+                              ),
+                            ),
                           ),
                   ),
                 ],
@@ -339,8 +367,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Auto-deduct 1 from stock on every sale (e.g. drinks/cups). '
-                              'Leave off for items you restock by hand.',
+                              'Lists this product in Inventory and deducts 1 from stock on every sale '
+                              '(e.g. drinks, cups). Leave off for made-to-order items like meals.',
                               style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
                             ),
                           ],

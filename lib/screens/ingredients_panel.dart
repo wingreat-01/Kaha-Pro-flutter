@@ -229,117 +229,135 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Phones: nearly full width (12px margin each side). Wider screens:
+    // cap at maxDialogWidth and center. AlertDialog sizes itself to its
+    // content's intrinsic width, so the content below is wrapped in a
+    // SizedBox(width: double.maxFinite) to let it fill this width.
+    const maxDialogWidth = 560.0;
+    const minSideMargin = 12.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalInset = screenWidth > maxDialogWidth + (minSideMargin * 2)
+        ? (screenWidth - maxDialogWidth) / 2
+        : minSideMargin;
+    // Dialog width minus AlertDialog's default 24px content padding on
+    // each side -- used so the item suggestions list matches the field.
+    final contentWidth = screenWidth - (horizontalInset * 2) - 48;
+
     return AlertDialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 24),
       backgroundColor: AppColors.slate,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       title: Text('Withdraw stock', style: AppTextStyles.body(size: 15, weight: FontWeight.w700)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Item', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
-            const SizedBox(height: 6),
-            Autocomplete<Ingredient>(
-              displayStringForOption: (i) => i.name,
-              optionsBuilder: (value) {
-                if (value.text.isEmpty) return const Iterable<Ingredient>.empty();
-                final query = value.text.toLowerCase();
-                return widget.ingredients.where((i) => i.name.toLowerCase().contains(query));
-              },
-              onSelected: (i) => setState(() {
-                _selected = i;
-                _error = null;
-              }),
-              fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-                return TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  autofocus: true,
-                  style: AppTextStyles.body(size: 14),
-                  decoration: const InputDecoration(hintText: 'Type to search...'),
-                );
-              },
-              optionsViewBuilder: (context, onSelected, options) {
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Material(
-                    color: AppColors.slateField,
-                    borderRadius: BorderRadius.circular(10),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 220, maxWidth: 300),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: options.length,
-                        itemBuilder: (context, index) {
-                          final option = options.elementAt(index);
-                          return InkWell(
-                            onTap: () => onSelected(option),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              child: Text(
-                                '${option.name} · ${_IngredientRow._trimZeros(option.stockQuantity)} ${option.unitDisplay}',
-                                style: AppTextStyles.body(size: 13),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Item', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              Autocomplete<Ingredient>(
+                displayStringForOption: (i) => i.name,
+                optionsBuilder: (value) {
+                  if (value.text.isEmpty) return const Iterable<Ingredient>.empty();
+                  final query = value.text.toLowerCase();
+                  return widget.ingredients.where((i) => i.name.toLowerCase().contains(query));
+                },
+                onSelected: (i) => setState(() {
+                  _selected = i;
+                  _error = null;
+                }),
+                fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    autofocus: true,
+                    style: AppTextStyles.body(size: 14),
+                    decoration: const InputDecoration(hintText: 'Type to search...'),
+                  );
+                },
+                optionsViewBuilder: (context, onSelected, options) {
+                  return Align(
+                    alignment: Alignment.topLeft,
+                    child: Material(
+                      color: AppColors.slateField,
+                      borderRadius: BorderRadius.circular(10),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: 220, maxWidth: contentWidth),
+                        child: ListView.builder(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          itemCount: options.length,
+                          itemBuilder: (context, index) {
+                            final option = options.elementAt(index);
+                            return InkWell(
+                              onTap: () => onSelected(option),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                child: Text(
+                                  '${option.name} · ${_IngredientRow._trimZeros(option.stockQuantity)} ${option.unitDisplay}',
+                                  style: AppTextStyles.body(size: 13),
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            Text(
-              _selected != null
-                  ? 'Qty to withdraw (${_selected!.unitDisplay})'
-                  : 'Qty to withdraw',
-              style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _qtyCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: AppTextStyles.body(size: 14),
-              decoration: const InputDecoration(hintText: 'e.g. 20'),
-            ),
-            const SizedBox(height: 14),
-            Text('Reason', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<String>(
-              value: _reason,
-              dropdownColor: AppColors.slate,
-              style: AppTextStyles.body(size: 14),
-              decoration: const InputDecoration(hintText: 'Select a reason'),
-              items: kStockAdjustmentReasons
-                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
-                  .toList(),
-              onChanged: (value) => setState(() {
-                _reason = value;
-                _error = null;
-              }),
-            ),
-            if (_reason == 'Other') ...[
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              Text(
+                _selected != null
+                    ? 'Qty to withdraw (${_selected!.unitDisplay})'
+                    : 'Qty to withdraw',
+                style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _qtyCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: AppTextStyles.body(size: 14),
+                decoration: const InputDecoration(hintText: 'e.g. 20'),
+              ),
+              const SizedBox(height: 14),
+              Text('Reason', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: _reason,
+                dropdownColor: AppColors.slate,
+                style: AppTextStyles.body(size: 14),
+                decoration: const InputDecoration(hintText: 'Select a reason'),
+                items: kStockAdjustmentReasons
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                    .toList(),
+                onChanged: (value) => setState(() {
+                  _reason = value;
+                  _error = null;
+                }),
+              ),
+              if (_reason == 'Other') ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _otherReasonCtrl,
+                  style: AppTextStyles.body(size: 13),
+                  decoration: const InputDecoration(hintText: 'Enter reason'),
+                ),
+              ],
               const SizedBox(height: 10),
               TextField(
-                controller: _otherReasonCtrl,
+                controller: _noteCtrl,
                 style: AppTextStyles.body(size: 13),
-                decoration: const InputDecoration(hintText: 'Enter reason'),
+                decoration: const InputDecoration(hintText: 'Note (optional)'),
               ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: AppTextStyles.body(size: 12.5, color: AppColors.ledgerRed)),
+              ],
             ],
-            const SizedBox(height: 10),
-            TextField(
-              controller: _noteCtrl,
-              style: AppTextStyles.body(size: 13),
-              decoration: const InputDecoration(hintText: 'Note (optional)'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: AppTextStyles.body(size: 12.5, color: AppColors.ledgerRed)),
-            ],
-          ],
+          ),
         ),
       ),
       actions: [

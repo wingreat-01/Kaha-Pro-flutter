@@ -29,14 +29,19 @@ class _InventoryPanelState extends State<InventoryPanel> {
   Widget build(BuildContext context) {
     final catalog = context.watch<ProductProvider>();
 
+    // Inventory only lists products with Track stock switched on --
+    // made-to-order items (meals, etc.) have no stock to count, so they
+    // stay out of this screen entirely.
+    final tracked = catalog.products.where((p) => p.trackStock).toList();
+
     // Search filters the product list before it's grouped by category,
     // same approach as IngredientsPanel -- suggestions below come from
     // the full unfiltered catalog so autocomplete keeps offering every
     // product name regardless of what the live query currently matches.
     final query = _searchQuery.trim().toLowerCase();
     final matching = query.isEmpty
-        ? catalog.products
-        : catalog.products.where((p) => p.name.toLowerCase().contains(query)).toList();
+        ? tracked
+        : tracked.where((p) => p.name.toLowerCase().contains(query)).toList();
 
     final byCategory = <String, List<Product>>{};
     for (final product in matching) {
@@ -55,7 +60,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
         ),
         actions: [
           CatalogSearchBar(
-            suggestions: catalog.products.map((p) => p.name).toList(),
+            suggestions: tracked.map((p) => p.name).toList(),
             onQueryChanged: (value) => setState(() => _searchQuery = value),
             hintText: 'Search Inventory…',
           ),
@@ -63,11 +68,15 @@ class _InventoryPanelState extends State<InventoryPanel> {
         ],
       ),
       body: BoundedContent(
-        child: catalog.products.isEmpty
+        child: tracked.isEmpty
             ? Center(
-                child: Text(
-                  'No products in the catalog yet.',
-                  style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    'No tracked products yet.\nTurn on "Track stock" when adding or editing a product to list it here.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+                  ),
                 ),
               )
             : matching.isEmpty

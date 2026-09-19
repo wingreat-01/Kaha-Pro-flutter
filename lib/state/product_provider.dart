@@ -134,7 +134,13 @@ class ProductProvider extends ChangeNotifier {
           bytes,
           fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
         );
-    return _client.storage.from(_imageBucket).getPublicUrl(path);
+    final publicUrl = _client.storage.from(_imageBucket).getPublicUrl(path);
+    // The path is identical on every re-upload (upsert), so the public
+    // URL is too — and both Flutter's in-memory image cache and the
+    // Supabase CDN key on the URL, which means a replaced photo would
+    // keep showing the old one. A changing version param makes each
+    // upload a new URL (the file itself is still overwritten in place).
+    return '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
   }
 
   /// Fetches this store's categories and products. Call once, right
