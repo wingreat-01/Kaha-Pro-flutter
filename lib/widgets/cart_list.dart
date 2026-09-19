@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../state/cart_provider.dart';
 import '../theme/app_theme.dart';
+import '../state/currency_provider.dart';
 
 /// Scrollable list of cart line items with quantity steppers.
 /// Reused inside the wide-screen side panel and the phone bottom sheet.
@@ -42,7 +43,7 @@ class CartList extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '₱${item.unitPrice.toStringAsFixed(2)} each',
+                    '${context.money(item.unitPrice)} each',
                     style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
                   ),
                 ],
@@ -54,10 +55,12 @@ class CartList extends StatelessWidget {
               onIncrement: () => cart.increment(item.product.id, variantId: item.selectedVariant?.id),
             ),
             const SizedBox(width: 12),
-            SizedBox(
-              width: 64,
+            ConstrainedBox(
+              // minWidth (not a fixed width) so longer amounts — e.g.
+              // "Rp 150000" — grow instead of wrapping onto two lines.
+              constraints: const BoxConstraints(minWidth: 64),
               child: Text(
-                '₱${item.lineTotal.toStringAsFixed(2)}',
+                context.money(item.lineTotal),
                 textAlign: TextAlign.right,
                 style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber),
               ),

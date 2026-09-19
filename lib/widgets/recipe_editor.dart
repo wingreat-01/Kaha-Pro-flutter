@@ -4,6 +4,7 @@ import '../models/ingredient.dart';
 import '../models/product_recipe_item.dart';
 import '../state/ingredient_provider.dart';
 import '../state/recipe_provider.dart';
+import '../state/currency_provider.dart';
 import '../state/store_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -321,7 +322,7 @@ class _RecipeEditorState extends State<RecipeEditor> {
     final Widget costLine;
     if (price == null || price <= 0) {
       costLine = Text(
-        'Cost: ₱${cost.toStringAsFixed(2)}',
+        'Cost: ${context.money(cost)}',
         style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary),
       );
     } else {
@@ -333,7 +334,7 @@ class _RecipeEditorState extends State<RecipeEditor> {
               ? AppColors.ledAmber
               : AppColors.tillGreen;
       costLine = Text(
-        'Cost: ₱${cost.toStringAsFixed(2)} · Margin ${marginPct.toStringAsFixed(0)}% (₱${profit.toStringAsFixed(2)})',
+        'Cost: ${context.money(cost)} · Margin ${marginPct.toStringAsFixed(0)}% (${context.money(profit)})',
         style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: color),
       );
     }
@@ -382,14 +383,14 @@ class _RecipeEditorState extends State<RecipeEditor> {
               .toList(),
           onChanged: (value) => setState(() => _targetMarginPct = value ?? _targetMarginPct),
         ),
-        Text('margin: ₱${suggested.toStringAsFixed(2)}', style: AppTextStyles.mono(size: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+        Text('margin: ${context.money(suggested)}', style: AppTextStyles.mono(size: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
         TextButton(
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          onPressed: () => widget.priceController!.text = suggested.toStringAsFixed(2),
+          onPressed: () => widget.priceController!.text = suggested.toStringAsFixed(context.currencyRead.decimals),
           child: Text('Use', style: AppTextStyles.body(size: 11.5, weight: FontWeight.w700, color: AppColors.tillGreen)),
         ),
       ],

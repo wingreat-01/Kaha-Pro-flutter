@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
 import '../state/product_provider.dart';
+import '../state/currency_provider.dart';
 import '../widgets/reassign_category_dialog.dart';
 import '../widgets/bounded_content.dart';
 
@@ -317,7 +318,7 @@ class _CategoryProductsView extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '₱${p.price.toStringAsFixed(2)}',
+                              context.money(p.price),
                               style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
                             ),
                             const SizedBox(width: 4),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product_variant.dart';
 import '../state/product_provider.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Drop-in "This product has sizes" section for the add/edit product
@@ -55,12 +56,15 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
   late bool _hasSizes;
   final List<_DraftRow> _rows = [];
 
+  /// Decimal places for the active currency (2 for PHP, 0 for JPY…).
+  int get _decimals => context.currencyRead.decimals;
+
   @override
   void initState() {
     super.initState();
     _hasSizes = widget.initialVariants.isNotEmpty;
     for (final v in widget.initialVariants) {
-      _rows.add(_newRow(existing: v, name: v.name, price: v.price.toStringAsFixed(2)));
+      _rows.add(_newRow(existing: v, name: v.name, price: v.price.toStringAsFixed(_decimals)));
     }
   }
 
@@ -161,7 +165,7 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
             _rows[index] = _newRow(
               existing: matches.last,
               name: name,
-              price: price.toStringAsFixed(2),
+              price: price.toStringAsFixed(_decimals),
             );
           });
         }
@@ -260,7 +264,7 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
                       focusNode: row.priceFocus,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: AppTextStyles.mono(size: 14, weight: FontWeight.w600, color: AppColors.ledAmber),
-                      decoration: const InputDecoration(hintText: '0.00', prefixText: '₱'),
+                      decoration: InputDecoration(hintText: context.moneyHint, prefixText: context.moneyPrefix),
                       onSubmitted: (_) => _commitRow(index),
                       onEditingComplete: () => _commitRow(index),
                     ),

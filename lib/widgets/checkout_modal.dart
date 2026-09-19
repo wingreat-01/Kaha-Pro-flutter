@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/cart_provider.dart';
+import '../state/currency_provider.dart';
+import '../models/currency.dart';
 import '../state/ingredient_provider.dart';
 import '../state/product_provider.dart';
 import '../state/payment_method_provider.dart';
@@ -136,19 +138,23 @@ class _CheckoutModalState extends State<CheckoutModal> {
     return tendered != null && tendered >= _total;
   }
 
+  /// Active currency, read once (not subscribed) — these getters run in
+  /// event handlers as well as build().
+  Currency get _currency => context.currencyRead;
+
   void _setExact() {
-    _controller.text = _total.toStringAsFixed(2);
+    _controller.text = _total.toStringAsFixed(_currency.decimals);
     setState(() => _error = null);
   }
 
   void _addQuickAmount(double amount) {
     final current = _tendered ?? 0;
-    _controller.text = (current + amount).toStringAsFixed(2);
+    _controller.text = (current + amount).toStringAsFixed(_currency.decimals);
     setState(() => _error = null);
   }
 
   void _setQuickTarget(double amount) {
-    _controller.text = amount.toStringAsFixed(2);
+    _controller.text = amount.toStringAsFixed(_currency.decimals);
     setState(() => _error = null);
   }
 
@@ -164,58 +170,58 @@ class _CheckoutModalState extends State<CheckoutModal> {
   double _ceilToMultiple(double value, double multiple) =>
       (value / multiple).ceil() * multiple;
 
-  // Candidate cash amounts for the quick-amount chips.
+  // Candidate cash amounts for the quick-amount chips. The notes,
+  // stack step and round-up steps come from the active Currency
+  // (models/currency.dart); the examples below use the peso values.
   //
-  // At or below ₱1000 (the largest common peso bill), chips are actual
-  // cash values a customer would realistically hand over — tapping one
-  // *adds* it to whatever's already entered, so a couple of taps can
-  // stack bills together. An amount only shows if it alone could cover
-  // the total (e.g. a ₱170 total hides ₱20/₱50/₱100 but keeps ₱500,
-  // ₱1000 — someone paying with a ₱500 bill or only having a ₱1000
-  // bill are both real cases, so nothing above the due amount gets
-  // filtered out just because a smaller bill would also clear it).
+  // At or below the largest note (₱1000), chips are actual cash values
+  // a customer would realistically hand over — tapping one *adds* it
+  // to whatever's already entered, so a couple of taps can stack bills
+  // together. An amount only shows if it alone could cover the total
+  // (e.g. a ₱170 total hides ₱20/₱50/₱100 but keeps ₱500, ₱1000 —
+  // someone paying with a ₱500 bill or only having a ₱1000 bill are
+  // both real cases, so nothing above the due amount gets filtered out
+  // just because a smaller bill would also clear it).
   //
-  // ₱200 is deliberately excluded — the BSP halted production of the
-  // ₱200 bill in 2021 due to low usage. It's still legal tender but
-  // increasingly rare in a cash drawer, so it's no longer a safe bet
-  // for a "next bill up" suggestion.
-  static const List<double> _billDenominations = [20, 50, 100, 500, 1000];
+  // (PHP: ₱200 is deliberately left out of the list — the BSP halted
+  // production of that bill in 2021 due to low usage, so it's no
+  // longer a safe bet for a "next bill up" suggestion.)
 
   // For totals that don't line up with an actual bill (e.g. ₱220),
-  // round up to the nearest ₱100 as an additional candidate — a
-  // cashier is far more likely to reach for a stack of ₱100 bills
-  // (₱300) than to have an increasingly-rare ₱200 note. Shown
-  // alongside the real bills that also cover the total (e.g. ₱500,
-  // ₱1000) rather than instead of them — a customer could easily be
-  // handing over any one of these, so all three stay as options
+  // round up to the currency's stack step (₱100) as an additional
+  // candidate — a cashier is far more likely to reach for a stack of
+  // ₱100 bills (₱300) than to have an increasingly-rare ₱200 note.
+  // Shown alongside the real bills that also cover the total (e.g.
+  // ₱500, ₱1000) rather than instead of them — a customer could easily
+  // be handing over any one of these, so all of them stay as options
   // instead of guessing which is most likely. The Wrap this feeds
   // into (see build()) flows extra chips onto a second line, so
   // there's no fixed cap on how many show.
   List<double> get _billBasedOptions {
+    final currency = _currency;
     final candidates = <double>{
-      ..._billDenominations.where((amount) => amount >= _total),
-      if (_total > 0) _ceilToMultiple(_total, 100),
+      ...currency.bills.where((amount) => amount >= _total),
+      if (_total > 0) _ceilToMultiple(_total, currency.stackStep),
     }.toList()
       ..sort();
     return candidates;
   }
 
-  // Above ₱1000, no single bill covers the total, so there's nothing
-  // sensible to "add". Instead offer nice round-up targets — next
-  // ₱50, next ₱100, next ₱500 above the total — and tapping one *sets*
-  // the tendered amount directly to that target (e.g. a ₱1043 total
-  // offers ₱1050 / ₱1100 / ₱1500).
+  // Above the largest note, no single bill covers the total, so
+  // there's nothing sensible to "add". Instead offer nice round-up
+  // targets using the currency's round-up steps (PHP: next ₱50, ₱100,
+  // ₱500 above the total) — and tapping one *sets* the tendered amount
+  // directly to that target (e.g. a ₱1043 total offers ₱1050 / ₱1100 /
+  // ₱1500).
   List<double> get _quickRoundUpTargets {
     final targets = <double>{
-      _ceilToMultiple(_total, 50),
-      _ceilToMultiple(_total, 100),
-      _ceilToMultiple(_total, 500),
+      for (final step in _currency.roundUpSteps) _ceilToMultiple(_total, step),
     }.toList()
       ..sort();
     return targets;
   }
 
-  bool get _useRoundUpTargets => _total > 1000;
+  bool get _useRoundUpTargets => _total > _currency.largestBill;
 
   List<double> get _quickAmountOptions =>
       _useRoundUpTargets ? _quickRoundUpTargets : _billBasedOptions;
@@ -477,9 +483,9 @@ class _CheckoutModalState extends State<CheckoutModal> {
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
                       decoration: InputDecoration(
-                        prefixText: '₱ ',
+                        prefixText: '${_currency.symbol} ',
                         prefixStyle: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
-                        hintText: '0.00',
+                        hintText: _currency.zeroHint,
                       ),
                       onChanged: (_) => setState(() => _error = null),
                       onSubmitted: (_) => _confirm(),
@@ -493,8 +499,8 @@ class _CheckoutModalState extends State<CheckoutModal> {
                         for (final amount in _quickAmountOptions)
                           _QuickChip(
                             label: _useRoundUpTargets
-                                ? '₱${amount.toStringAsFixed(0)}'
-                                : '+₱${amount.toStringAsFixed(0)}',
+                                ? '${_currency.prefix}${amount.toStringAsFixed(0)}'
+                                : '+${_currency.prefix}${amount.toStringAsFixed(0)}',
                             onTap: () => _useRoundUpTargets
                                 ? _setQuickTarget(amount)
                                 : _addQuickAmount(amount),
@@ -515,7 +521,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
                     ),
                   ] else if (_selectedMethod != null)
                     Text(
-                      'Confirming ₱${_total.toStringAsFixed(2)} via ${_selectedMethod!.name}. No change due.',
+                      'Confirming ${context.money(_total)} via ${_selectedMethod!.name}. No change due.',
                       style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
                     ),
                   if (_error != null) ...[
@@ -669,7 +675,7 @@ class _AmountLine extends StatelessWidget {
         children: [
           Text(label, style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
           Text(
-            '${isNegative ? '-' : ''}₱${amount.abs().toStringAsFixed(2)}',
+            context.money(amount),
             style: AppTextStyles.mono(
               size: 12,
               weight: FontWeight.w600,

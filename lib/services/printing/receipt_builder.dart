@@ -1,6 +1,7 @@
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../../models/store.dart';
 import '../../models/transaction.dart';
+import '../../state/currency_provider.dart';
 
 /// Builds the raw ESC/POS byte stream for a receipt — used by both
 /// the Bluetooth and network (socket) paths in
@@ -54,8 +55,8 @@ class EscPosReceiptBuilder {
     for (final item in transaction.items) {
       bytes.addAll(generator.text(item.name, styles: const PosStyles(bold: true)));
       bytes.addAll(generator.row([
-        PosColumn(text: '${item.quantity} x ${item.price.toStringAsFixed(2)}', width: 6),
-        PosColumn(text: item.lineTotal.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: '${item.quantity} x ${CurrencyProvider.active.plain(item.price)}', width: 6),
+        PosColumn(text: CurrencyProvider.active.plain(item.lineTotal), width: 6, styles: const PosStyles(align: PosAlign.right)),
       ]));
     }
     bytes.addAll(generator.hr());
@@ -111,8 +112,7 @@ class EscPosReceiptBuilder {
   }
 
   static List<int> _amountRow(Generator generator, String label, double value, {bool bold = false}) {
-    final isNegative = value < 0;
-    final text = '${isNegative ? '-' : ''}${value.abs().toStringAsFixed(2)}';
+    final text = CurrencyProvider.active.plain(value);
     return generator.row([
       PosColumn(text: label, width: 6, styles: PosStyles(bold: bold)),
       PosColumn(text: text, width: 6, styles: PosStyles(align: PosAlign.right, bold: bold)),

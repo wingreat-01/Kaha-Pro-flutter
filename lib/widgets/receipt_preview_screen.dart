@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/store.dart';
 import '../models/transaction.dart';
 import '../state/printer_provider.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import '../screens/settings/printer_settings_screen.dart';
 
@@ -184,8 +185,8 @@ class _ReceiptTicket extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('${item.quantity} x ${item.price.toStringAsFixed(2)}', style: mono(11)),
-                  Text(item.lineTotal.toStringAsFixed(2), style: mono(12, weight: FontWeight.w600)),
+                  Text('${item.quantity} x ${context.moneyPlain(item.price)}', style: mono(11)),
+                  Text(context.moneyPlain(item.lineTotal), style: mono(12, weight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -276,8 +277,7 @@ class _AmountRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isNegative = value < 0;
-    final text = '${isNegative ? '-' : ''}${value.abs().toStringAsFixed(2)}';
+    final text = context.moneyPlain(value);
     return Padding(
       padding: const EdgeInsets.only(bottom: 3),
       child: Row(

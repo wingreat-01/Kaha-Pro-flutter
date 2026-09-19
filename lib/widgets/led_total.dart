@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../state/currency_provider.dart';
 
 /// The signature "calculator screen" element: glowing amber digits
 /// on the dark register body. Used in the cart panel (checkout modal /
@@ -8,7 +9,7 @@ import '../theme/app_theme.dart';
 /// Digits roll like an odometer when [amount] changes — each digit slides
 /// in from below and the old one slides out above when the total goes up,
 /// and the reverse when it goes down. Only characters that actually
-/// changed value animate; unchanged digits, the peso sign, and the
+/// changed value animate; unchanged digits, the currency symbol, and the
 /// decimal point stay put.
 ///
 /// Known limitation: roll direction is a single "total went up or down"
@@ -49,7 +50,7 @@ class _LedTotalState extends State<LedTotal> {
   @override
   Widget build(BuildContext context) {
     final displayColor = widget.color ?? AppColors.ledAmber;
-    final text = '₱${widget.amount.toStringAsFixed(2)}';
+    final text = context.money(widget.amount);
 
     // null = don't know direction yet (first build) -> render statically.
     final bool? rollingUp =
@@ -123,7 +124,7 @@ class _OdometerChar extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDigit = _digitPattern.hasMatch(char);
 
-    // Non-digits (₱, .) and the very first render (no known direction
+    // Non-digits (currency symbol, .) and the very first render (no known direction
     // yet) just render as plain text — nothing to roll.
     if (!isDigit || rollingUp == null) {
       return Text(char, style: style);

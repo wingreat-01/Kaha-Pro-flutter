@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/transaction.dart';
 import '../state/transaction_provider.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import 'transaction_detail_modal.dart';
 
@@ -73,7 +74,7 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
           style: AppTextStyles.body(size: 16, weight: FontWeight.w700, color: AppColors.textPrimary),
         ),
         content: Text(
-          'This sale (₱${txn.total.toStringAsFixed(2)}) never synced and will stop retrying. '
+          'This sale (${dialogContext.money(txn.total)}) never synced and will stop retrying. '
           'This can\'t be undone.',
           style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
         ),
@@ -257,7 +258,7 @@ class _DaySummaryHeader extends StatelessWidget {
               style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
             ),
             Text(
-              '₱${summary.totalRevenue.toStringAsFixed(2)}',
+              context.money(summary.totalRevenue),
               style: AppTextStyles.mono(size: 14, weight: FontWeight.w700, color: AppColors.ledAmber),
             ),
           ],
@@ -341,7 +342,7 @@ class _TransactionRow extends StatelessWidget {
               ),
             ),
             Text(
-              '₱${transaction.total.toStringAsFixed(2)}',
+              context.money(transaction.total),
               style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary),
             ),
             const SizedBox(width: 6),

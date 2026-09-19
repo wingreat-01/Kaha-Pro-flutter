@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/ingredient.dart';
 import '../models/ingredient_stock_movement.dart';
 import '../state/ingredient_provider.dart';
+import '../state/currency_provider.dart';
 import '../state/store_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
@@ -374,13 +375,13 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
   }
 }
 
-/// Total ₱ value of stock currently on hand — sum of (stock_quantity ×
+/// Total value of stock currently on hand — sum of (stock_quantity ×
 /// cost_per_unit) across every ingredient that has a cost set. Items
 /// with no cost_per_unit are excluded from the total rather than
-/// silently treated as ₱0, since that would understate the real
+/// silently treated as zero, since that would understate the real
 /// value; instead their count is called out underneath so it's clear
 /// the number is a floor, not the whole picture. Hidden entirely if
-/// nothing has a cost set yet — a ₱0.00 card would just be noise.
+/// nothing has a cost set yet — a zero-value card would just be noise.
 class _ValuationSummary extends StatelessWidget {
   final List<Ingredient> ingredients;
   const _ValuationSummary({required this.ingredients});
@@ -417,7 +418,7 @@ class _ValuationSummary extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '₱${total.toStringAsFixed(2)}',
+            context.money(total),
             style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
           ),
           if (missing > 0) ...[
@@ -559,7 +560,7 @@ class _IngredientRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     ingredient.costPerUnit != null
-                        ? '₱${_trimZeros(ingredient.costPerUnit!)} / ${ingredient.unitDisplay}'
+                        ? '${context.moneyPrefix}${_trimZeros(ingredient.costPerUnit!)} / ${ingredient.unitDisplay}'
                         : 'Cost not set',
                     style: AppTextStyles.body(
                       size: 11.5,

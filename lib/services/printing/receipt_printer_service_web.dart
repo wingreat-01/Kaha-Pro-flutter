@@ -2,6 +2,7 @@ import 'dart:html' as html;
 import '../../models/printer_config.dart';
 import '../../models/store.dart';
 import '../../models/transaction.dart';
+import '../../state/currency_provider.dart';
 import 'receipt_printer_service.dart';
 
 /// Web implementation. Browsers don't expose raw Bluetooth RFCOMM or
@@ -100,7 +101,7 @@ class WebReceiptPrinterService implements ReceiptPrinterService {
     for (final item in transaction.items) {
       b.writeln('<div class="bold">${item.name}</div>');
       b.writeln(
-          '<div class="row"><span>${item.quantity} x ${item.price.toStringAsFixed(2)}</span><span>${item.lineTotal.toStringAsFixed(2)}</span></div>');
+          '<div class="row"><span>${item.quantity} x ${CurrencyProvider.active.plain(item.price)}</span><span>${CurrencyProvider.active.plain(item.lineTotal)}</span></div>');
     }
     b.writeln('<hr>');
     if (transaction.hasDiscount) {
@@ -129,8 +130,7 @@ class WebReceiptPrinterService implements ReceiptPrinterService {
   }
 
   String _amountRow(String label, double value, {bool bold = false}) {
-    final isNegative = value < 0;
-    final text = '${isNegative ? '-' : ''}${value.abs().toStringAsFixed(2)}';
+    final text = CurrencyProvider.active.plain(value);
     final cls = bold ? 'row bold' : 'row';
     return '<div class="$cls"><span>$label</span><span>$text</span></div>';
   }

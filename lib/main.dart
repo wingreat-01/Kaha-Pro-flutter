@@ -14,6 +14,7 @@ import 'state/user_provider.dart';
 import 'state/ai_assistant_provider.dart';
 import 'state/payment_method_provider.dart';
 import 'state/printer_provider.dart';
+import 'state/currency_provider.dart';
 import 'state/billing_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/store_setup_screen.dart';
@@ -60,6 +61,9 @@ Future<void> main() async {
         // ..load() restores whatever printer was saved on this device
         // in a previous session (see PrinterProvider.load).
         ChangeNotifierProvider(create: (_) => PrinterProvider()..load()),
+        // ..load() restores the saved currency (symbol/decimals shown
+        // everywhere amounts appear) — see CurrencyProvider.
+        ChangeNotifierProvider(create: (_) => CurrencyProvider()..load()),
         // ..load() restores the saved theme choice (light/dark/system).
         ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
         // Not initialized here (no ..init()) -- UpgradeScreen calls

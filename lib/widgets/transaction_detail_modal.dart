@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import 'led_total.dart';
 
@@ -81,7 +82,7 @@ class TransactionDetailModal extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            '₱${item.lineTotal.toStringAsFixed(2)}',
+                            context.money(item.lineTotal),
                             style: AppTextStyles.mono(size: 13.5, weight: FontWeight.w600, color: AppColors.textSecondary),
                           ),
                         ],

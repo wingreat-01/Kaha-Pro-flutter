@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../state/currency_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../state/store_provider.dart';
 import '../state/theme_provider.dart';
@@ -11,6 +12,7 @@ import 'users_panel.dart';
 import 'categories_panel.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
+import '../widgets/currency_picker_tile.dart' show showCurrencyPicker;
 import '../models/store.dart';
 import 'upgrade_screen.dart';
 import 'store_details_panel.dart';
@@ -89,6 +91,7 @@ class SettingsPanel extends StatelessWidget {
     final store = storeProvider.store;
     final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
     final themeMode = context.watch<ThemeProvider>().mode;
+    final currency = context.watch<CurrencyProvider>().currency;
 
     return BoundedContent(
       child: ListView(
@@ -182,6 +185,12 @@ class SettingsPanel extends StatelessWidget {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const StoreDetailsPanel()),
           ),
+        ),
+        _SettingsRow(
+          icon: Icons.paid_outlined,
+          label: 'Currency',
+          subtitle: '${currency.name} (${currency.symbol})',
+          onTap: () => showCurrencyPicker(context),
         ),
         _SettingsRow(
           icon: Icons.brightness_6_outlined,

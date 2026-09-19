@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/product.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import 'product_variant_editor.dart';
 import 'recipe_editor.dart';
@@ -243,7 +244,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
               const SizedBox(height: 18),
               _field('Name', _nameCtrl, hint: 'e.g. Bottled Water'),
               const SizedBox(height: 14),
-              _field('Price', _priceCtrl, hint: '0.00', keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+              _field('Price', _priceCtrl, hint: context.moneyHint, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               const SizedBox(height: 14),
               _field('Emoji (optional)', _emojiCtrl, hint: '🛒'),
               const SizedBox(height: 14),

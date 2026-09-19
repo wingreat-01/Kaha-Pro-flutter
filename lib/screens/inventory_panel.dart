@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
+import '../state/currency_provider.dart';
 import '../state/product_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
@@ -141,13 +142,13 @@ String _trimZeros(double v) {
   return s;
 }
 
-/// Total ₱ value of stock currently on hand -- sum of (stock quantity x
+/// Total value of stock currently on hand -- sum of (stock quantity x
 /// cost per unit) across every tracked product that has a cost set.
 /// Same behavior as the Supplies & Materials card: products with no
-/// cost are left out of the total rather than counted as ₱0 (that
+/// cost are left out of the total rather than counted as zero (that
 /// would understate the real value) and their count is shown underneath
 /// so it's clear the number is a floor. Hidden entirely until at least
-/// one product has a cost -- a ₱0.00 card would just be noise.
+/// one product has a cost -- a zero-value card would just be noise.
 class _ValuationSummary extends StatelessWidget {
   final List<Product> products;
   const _ValuationSummary({required this.products});
@@ -184,7 +185,7 @@ class _ValuationSummary extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '₱${total.toStringAsFixed(2)}',
+            context.money(total),
             style: AppTextStyles.mono(size: 22, weight: FontWeight.w700, color: AppColors.ledAmber),
           ),
           if (missing > 0) ...[
@@ -351,7 +352,7 @@ class _InventoryRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     product.costPerUnit != null
-                        ? '₱${_trimZeros(product.costPerUnit!)} / ${product.unitDisplay}'
+                        ? '${context.moneyPrefix}${_trimZeros(product.costPerUnit!)} / ${product.unitDisplay}'
                         : 'Cost not set',
                     style: AppTextStyles.body(
                       size: 11.5,

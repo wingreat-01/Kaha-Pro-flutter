@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../state/cart_provider.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import 'cart_list.dart';
 import 'led_total.dart';
@@ -118,7 +119,7 @@ class CartBottomBar extends StatelessWidget {
             ),
             const Spacer(),
             Text(
-              '₱${cart.total.toStringAsFixed(2)}',
+              context.money(cart.total),
               style: AppTextStyles.mono(size: 19, weight: FontWeight.w700, color: AppColors.ledAmber),
             ),
             const SizedBox(width: 8),

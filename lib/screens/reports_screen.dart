@@ -5,6 +5,7 @@ import '../models/product_recipe_item.dart';
 import '../models/sales_report.dart';
 import '../state/ingredient_provider.dart';
 import '../state/recipe_provider.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Sales Reports screen — answers the owner's day-to-day questions:
@@ -388,13 +389,13 @@ class _SummaryGrid extends StatelessWidget {
       children: [
         _SummaryCard(
           label: 'TOTAL SALES',
-          value: '₱${report.totalRevenue.toStringAsFixed(2)}',
+          value: context.money(report.totalRevenue),
           valueColor: AppColors.ledAmber,
-          subtitle: 'avg ₱${report.avgTransactionValue.toStringAsFixed(2)}/sale',
+          subtitle: 'avg ${context.money(report.avgTransactionValue)}/sale',
         ),
         _SummaryCard(
           label: 'CASH IN',
-          value: '₱${report.cashIn.toStringAsFixed(2)}',
+          value: context.money(report.cashIn),
           valueColor: AppColors.tillGreen,
         ),
         _SummaryCard(
@@ -410,7 +411,7 @@ class _SummaryGrid extends StatelessWidget {
         if (showGrossProfit)
           _SummaryCard(
             label: 'GROSS PROFIT',
-            value: '₱${report.grossProfit.toStringAsFixed(2)}',
+            value: context.money(report.grossProfit),
             valueColor: report.grossProfit < 0 ? AppColors.ledgerRed : AppColors.tillGreen,
             subtitle: report.hasCompleteCostData
                 ? null
@@ -495,7 +496,7 @@ class _SortToggle extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _segment('Qty', _SortMode.quantity),
-          _segment('₱', _SortMode.revenue),
+          _segment(context.moneySymbol, _SortMode.revenue),
         ],
       ),
     );
@@ -592,7 +593,7 @@ class _BestSellersList extends StatelessWidget {
                   children: [
                     Text('${line.quantitySold} sold',
                         style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted)),
-                    Text('₱${line.revenue.toStringAsFixed(2)}',
+                    Text(context.money(line.revenue),
                         style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber)),
                   ],
                 ),
@@ -654,7 +655,7 @@ class _CashierBreakdown extends StatelessWidget {
                     ],
                   ),
                 ),
-                Text('₱${line.revenue.toStringAsFixed(2)}',
+                Text(context.money(line.revenue),
                     style: AppTextStyles.mono(size: 13.5, weight: FontWeight.w700, color: AppColors.tillGreen)),
               ],
             ),

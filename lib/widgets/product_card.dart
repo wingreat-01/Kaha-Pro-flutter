@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/product.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 
 /// A single product "key" in the register grid.
@@ -39,16 +40,16 @@ class _ProductCardState extends State<ProductCard> {
   // The flat product.price becomes stale the moment a size is added
   // (it's whatever it happened to be before sizes existed, and never
   // gets updated after) — so once a product has variants, the card
-  // shows "From ₱<cheapest>" instead, matching what the size picker
+  // shows "From <currency><cheapest>" instead, matching what the size picker
   // sheet actually offers. A single variant still shows "From" rather
   // than that one price outright, since more sizes could be added
   // later and the label shouldn't need to flip format at that point.
   String _priceLabel(Product product) {
     if (product.variants.isEmpty) {
-      return '₱${product.price.toStringAsFixed(2)}';
+      return context.money(product.price);
     }
     final cheapest = product.variants.map((v) => v.price).reduce(min);
-    return 'From ₱${cheapest.toStringAsFixed(2)}';
+    return 'From ${context.money(cheapest)}';
   }
 
   Future<void> _pickImage() async {
