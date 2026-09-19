@@ -19,6 +19,13 @@ class PaymentMethodProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  /// Payment methods a store starts with when it has none yet. Only
+  /// Cash for now -- checkout treats a method named exactly "Cash" as
+  /// cash (amount tendered + change), and with no methods at all a
+  /// cashier can't complete a sale, so it has to exist from the start.
+  /// Add more names here to seed more (e.g. 'GCash').
+  static const List<String> _defaultMethodNames = ['Cash'];
+
   /// Fetch-once-on-login, same as ProductProvider/IngredientProvider.
   /// Call again manually after admin edits (add/edit/delete/reorder).
   Future<void> loadFromSupabase() async {
@@ -35,11 +42,25 @@ class PaymentMethodProvider extends ChangeNotifier {
       _paymentMethods = (response as List)
           .map((row) => PaymentMethod.fromMap(row as Map<String, dynamic>))
           .toList();
+
+      // First install (nothing registered yet): start the store with
+      // the defaults instead of making the owner type them in. Only
+      // runs after a successful load, so an offline/failed fetch never
+      // creates duplicates.
+      if (_paymentMethods.isEmpty) {
+        await _seedDefaults();
+      }
     } catch (e) {
       _error = 'Failed to load payment methods: $e';
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _seedDefaults() async {
+    for (final name in _defaultMethodNames) {
+      await addPaymentMethod(name);
     }
   }
 

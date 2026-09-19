@@ -288,6 +288,14 @@ class _TransactionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPending = transaction.isPending;
+    // "10:32 AM · GCash" -- the payment method's name is looked up
+    // from the payment_methods table, so it's blank on old sales
+    // recorded before payment methods existed, or whose method was
+    // deleted later.
+    final method = transaction.paymentMethodName?.trim();
+    final timeLabel = (method == null || method.isEmpty)
+        ? _formatTime(transaction.timestamp)
+        : '${_formatTime(transaction.timestamp)} · $method';
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -325,7 +333,8 @@ class _TransactionRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _formatTime(transaction.timestamp),
+                    timeLabel,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
                   ),
                 ],
