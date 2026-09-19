@@ -2,7 +2,9 @@ import 'dart:html' as html;
 import '../../models/printer_config.dart';
 import '../../models/store.dart';
 import '../../models/transaction.dart';
+import '../../models/vat_breakdown.dart';
 import '../../state/currency_provider.dart';
+import '../../state/receipt_options_provider.dart';
 import 'receipt_printer_service.dart';
 
 /// Web implementation. Browsers don't expose raw Bluetooth RFCOMM or
@@ -104,14 +106,25 @@ class WebReceiptPrinterService implements ReceiptPrinterService {
           '<div class="row"><span>${item.quantity} x ${CurrencyProvider.active.plain(item.price)}</span><span>${CurrencyProvider.active.plain(item.lineTotal)}</span></div>');
     }
     b.writeln('<hr>');
-    if (transaction.hasDiscount) {
+    final showVat = ReceiptOptionsProvider.vatBreakdownActive;
+    final vat = VatBreakdown.fromTransaction(transaction, decimals: CurrencyProvider.active.decimals);
+    final discountLabel = '20% ${transaction.discountType == 'senior' ? 'Senior' : 'PWD'} Discount';
+    if (showVat) {
+      b.writeln(_amountRow('VATable Sales', vat.vatableSales));
+      if (transaction.hasDiscount) {
+        b.writeln(_amountRow('VAT-Exempt Sales', vat.vatExemptSales));
+      }
+      b.writeln(_amountRow('VAT (12%)', vat.vatAmount));
+      if (transaction.hasDiscount) {
+        b.writeln(_amountRow(discountLabel, -transaction.discountAmount));
+      }
+    } else if (transaction.hasDiscount) {
       final subtotal = transaction.total + transaction.discountAmount + transaction.vatExemptAmount;
       b.writeln(_amountRow('Subtotal', subtotal));
       b.writeln(_amountRow('Less VAT', -transaction.vatExemptAmount));
-      b.writeln(_amountRow(
-          '20% ${transaction.discountType == 'senior' ? 'Senior' : 'PWD'} Discount', -transaction.discountAmount));
+      b.writeln(_amountRow(discountLabel, -transaction.discountAmount));
     }
-    b.writeln(_amountRow('TOTAL', transaction.total, bold: true));
+    b.writeln(_amountRow(showVat ? 'AMOUNT DUE' : 'TOTAL', transaction.total, bold: true));
     b.writeln(_amountRow(transaction.paymentMethodName ?? 'Payment', transaction.cashTendered));
     if (transaction.change > 0) b.writeln(_amountRow('Change', transaction.change));
     if (transaction.hasDiscount) {

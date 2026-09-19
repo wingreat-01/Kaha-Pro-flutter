@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../state/currency_provider.dart';
 import '../state/ingredient_provider.dart';
+import '../state/receipt_options_provider.dart';
 import '../state/store_provider.dart';
 import '../state/theme_provider.dart';
 import 'ingredients_panel.dart';
@@ -92,6 +93,7 @@ class SettingsPanel extends StatelessWidget {
     final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
     final themeMode = context.watch<ThemeProvider>().mode;
     final currency = context.watch<CurrencyProvider>().currency;
+    final receiptOptions = context.watch<ReceiptOptionsProvider>();
 
     return BoundedContent(
       child: ListView(
@@ -139,6 +141,15 @@ class SettingsPanel extends StatelessWidget {
               : 'Disabled — no receipt after checkout',
           value: storeProvider.receiptPrintingEnabled,
           onChanged: (value) => _toggleReceiptPrinting(context, value),
+        ),
+        _ToggleSettingsRow(
+          icon: Icons.receipt_long_outlined,
+          label: 'VAT Breakdown on Receipt',
+          subtitle: receiptOptions.showVatBreakdown
+              ? 'Enabled — shows VATable Sales, VAT (12%) & Amount Due'
+              : 'Disabled — receipt shows the total only',
+          value: receiptOptions.showVatBreakdown,
+          onChanged: (value) => context.read<ReceiptOptionsProvider>().setShowVatBreakdown(value),
         ),
         _SettingsRow(
           icon: Icons.inventory_2_outlined,

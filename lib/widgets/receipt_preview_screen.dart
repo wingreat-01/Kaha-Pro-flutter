@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/store.dart';
+import '../models/vat_breakdown.dart';
 import '../models/transaction.dart';
 import '../state/printer_provider.dart';
+import '../state/receipt_options_provider.dart';
 import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import '../screens/settings/printer_settings_screen.dart';
@@ -132,6 +134,9 @@ class _ReceiptTicket extends StatelessWidget {
   Widget build(BuildContext context) {
     final mono = (double size, {FontWeight weight = FontWeight.w500}) =>
         AppTextStyles.mono(size: size, weight: weight, color: const Color(0xFF2A241C));
+    final showVat = context.watch<ReceiptOptionsProvider>().showVatBreakdown;
+    final vat = VatBreakdown.fromTransaction(transaction, decimals: context.currencyRead.decimals);
+    final discountLabel = '20% ${transaction.discountType == 'senior' ? 'Senior' : 'PWD'} Discount';
 
     return Container(
       width: double.infinity,
@@ -195,18 +200,26 @@ class _ReceiptTicket extends StatelessWidget {
           _DashedDivider(),
           const SizedBox(height: 10),
 
-          // ── Totals / discount breakdown ──
-          if (transaction.hasDiscount) ...[
+          // ── Totals / VAT / discount breakdown ──
+          // With "VAT Breakdown on Receipt" on (Settings) this reads like a
+          // Philippine retail receipt: VATable Sales / VAT-Exempt Sales /
+          // VAT (12%), any Senior/PWD discount, then AMOUNT DUE. With it
+          // off, the original Subtotal / Less VAT / TOTAL layout is kept.
+          if (showVat) ...[
+            _AmountRow(label: 'VATable Sales', value: vat.vatableSales, style: mono),
+            if (transaction.hasDiscount)
+              _AmountRow(label: 'VAT-Exempt Sales', value: vat.vatExemptSales, style: mono),
+            _AmountRow(label: 'VAT (12%)', value: vat.vatAmount, style: mono),
+            if (transaction.hasDiscount)
+              _AmountRow(label: discountLabel, value: -transaction.discountAmount, style: mono),
+            const SizedBox(height: 4),
+          ] else if (transaction.hasDiscount) ...[
             _AmountRow(label: 'Subtotal', value: transaction.total + transaction.discountAmount + transaction.vatExemptAmount, style: mono),
             _AmountRow(label: 'Less VAT', value: -transaction.vatExemptAmount, style: mono),
-            _AmountRow(
-              label: '20% ${transaction.discountType == 'senior' ? 'Senior' : 'PWD'} Discount',
-              value: -transaction.discountAmount,
-              style: mono,
-            ),
+            _AmountRow(label: discountLabel, value: -transaction.discountAmount, style: mono),
             const SizedBox(height: 4),
           ],
-          _AmountRow(label: 'TOTAL', value: transaction.total, style: mono, emphasize: true),
+          _AmountRow(label: showVat ? 'AMOUNT DUE' : 'TOTAL', value: transaction.total, style: mono, emphasize: true),
           const SizedBox(height: 6),
           _AmountRow(label: transaction.paymentMethodName ?? 'Payment', value: transaction.cashTendered, style: mono),
           if (transaction.change > 0) _AmountRow(label: 'Change', value: transaction.change, style: mono),

@@ -1,7 +1,9 @@
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../../models/store.dart';
 import '../../models/transaction.dart';
+import '../../models/vat_breakdown.dart';
 import '../../state/currency_provider.dart';
+import '../../state/receipt_options_provider.dart';
 
 /// Builds the raw ESC/POS byte stream for a receipt — used by both
 /// the Bluetooth and network (socket) paths in
@@ -61,18 +63,26 @@ class EscPosReceiptBuilder {
     }
     bytes.addAll(generator.hr());
 
-    // ── Totals / discount breakdown ──
-    if (transaction.hasDiscount) {
+    // ── Totals / VAT / discount breakdown ── (mirrors ReceiptPreviewScreen)
+    final showVat = ReceiptOptionsProvider.vatBreakdownActive;
+    final vat = VatBreakdown.fromTransaction(transaction, decimals: CurrencyProvider.active.decimals);
+    final discountLabel = '20% ${transaction.discountType == 'senior' ? 'Senior' : 'PWD'} Discount';
+    if (showVat) {
+      bytes.addAll(_amountRow(generator, 'VATable Sales', vat.vatableSales));
+      if (transaction.hasDiscount) {
+        bytes.addAll(_amountRow(generator, 'VAT-Exempt Sales', vat.vatExemptSales));
+      }
+      bytes.addAll(_amountRow(generator, 'VAT (12%)', vat.vatAmount));
+      if (transaction.hasDiscount) {
+        bytes.addAll(_amountRow(generator, discountLabel, -transaction.discountAmount));
+      }
+    } else if (transaction.hasDiscount) {
       final subtotal = transaction.total + transaction.discountAmount + transaction.vatExemptAmount;
       bytes.addAll(_amountRow(generator, 'Subtotal', subtotal));
       bytes.addAll(_amountRow(generator, 'Less VAT', -transaction.vatExemptAmount));
-      bytes.addAll(_amountRow(
-        generator,
-        '20% ${transaction.discountType == 'senior' ? 'Senior' : 'PWD'} Discount',
-        -transaction.discountAmount,
-      ));
+      bytes.addAll(_amountRow(generator, discountLabel, -transaction.discountAmount));
     }
-    bytes.addAll(_amountRow(generator, 'TOTAL', transaction.total, bold: true));
+    bytes.addAll(_amountRow(generator, showVat ? 'AMOUNT DUE' : 'TOTAL', transaction.total, bold: true));
     bytes.addAll(_amountRow(generator, transaction.paymentMethodName ?? 'Payment', transaction.cashTendered));
     if (transaction.change > 0) {
       bytes.addAll(_amountRow(generator, 'Change', transaction.change));
