@@ -135,7 +135,14 @@ class ProductProvider extends ChangeNotifier {
           bytes,
           fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
         );
-    return _client.storage.from(_imageBucket).getPublicUrl(path);
+    final baseUrl = _client.storage.from(_imageBucket).getPublicUrl(path);
+    // upsert:true keeps the storage path (and therefore the public URL)
+    // identical across re-uploads, so Image.network/CachedNetworkImage
+    // keep serving the old cached bytes for that URL even after a
+    // successful re-upload. Cache-bust with a version query param and
+    // persist THIS url (not baseUrl) to product.image_url, so the fix
+    // survives a fresh loadFromSupabase() too.
+    return '$baseUrl?v=${DateTime.now().millisecondsSinceEpoch}';
   }
 
   /// Fetches this store's categories and products. Call once, right

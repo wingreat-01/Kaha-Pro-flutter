@@ -250,7 +250,17 @@ class _HomeShellState extends State<HomeShell> {
     // still see who's logged in via the Settings/Users screen.
     final isWideEnoughForNameLabel = MediaQuery.of(context).size.width >= 480;
 
-    return Scaffold(
+    return PopScope(
+      // Back button anywhere except Register returns to Register
+      // instead of falling through to the OS and closing the app.
+      // Register itself is the "home" tab, so back there behaves
+      // normally (exits the app).
+      canPop: _section == _Section.register,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        setState(() => _section = _Section.register);
+      },
+      child: Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
         backgroundColor: AppColors.slate,
@@ -318,6 +328,7 @@ class _HomeShellState extends State<HomeShell> {
           _body(),
           const CheckoutWarmup(),
         ],
+      ),
       ),
     );
   }

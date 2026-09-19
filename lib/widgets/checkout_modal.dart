@@ -61,6 +61,7 @@ class CheckoutModal extends StatefulWidget {
 class _CheckoutModalState extends State<CheckoutModal> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  final _scrollController = ScrollController();
   String? _error;
   bool _submitting = false;
 
@@ -142,20 +143,40 @@ class _CheckoutModalState extends State<CheckoutModal> {
   /// event handlers as well as build().
   Currency get _currency => context.currencyRead;
 
+  // After a quick-amount chip fills in the tendered field, the CHANGE
+  // readout and Confirm button are what the cashier actually needs to
+  // see next — but on a phone-height screen with the keyboard up, the
+  // scroll position from before the tap can leave both below the fold.
+  // Runs post-frame since the new CHANGE value (and its layout) isn't
+  // there yet on the frame the tap happens in.
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   void _setExact() {
     _controller.text = _total.toStringAsFixed(_currency.decimals);
     setState(() => _error = null);
+    _scrollToBottom();
   }
 
   void _addQuickAmount(double amount) {
     final current = _tendered ?? 0;
     _controller.text = (current + amount).toStringAsFixed(_currency.decimals);
     setState(() => _error = null);
+    _scrollToBottom();
   }
 
   void _setQuickTarget(double amount) {
     _controller.text = amount.toStringAsFixed(_currency.decimals);
     setState(() => _error = null);
+    _scrollToBottom();
   }
 
   // Resets the tendered field back to empty — for when a cashier taps
@@ -351,6 +372,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
     _discountNameController.dispose();
     _discountIdController.dispose();
     super.dispose();
@@ -387,6 +409,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: SingleChildScrollView(
+              controller: _scrollController,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
