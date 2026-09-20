@@ -185,63 +185,84 @@ class _ProductCardState extends State<ProductCard> {
         ),
         if (widget.isEditMode)
           Positioned(
-            top: -8,
-            left: -8,
+            top: -11,
+            left: -11,
             child: GestureDetector(
               onTap: widget.onEdit,
               child: Container(
-                width: 26,
-                height: 26,
+                width: 39,
+                height: 39,
                 decoration: BoxDecoration(
                   color: AppColors.tillGreen,
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.charcoal, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.edit, color: Colors.white, size: 13),
+                child: const Icon(Icons.edit, color: Colors.white, size: 18),
               ),
             ),
           ),
         if (widget.isEditMode)
           Positioned(
-            top: -8,
-            right: -8,
+            top: -11,
+            right: -11,
             child: GestureDetector(
               onTap: widget.onDelete,
               child: Container(
-                width: 26,
-                height: 26,
+                width: 39,
+                height: 39,
                 decoration: BoxDecoration(
                   color: AppColors.ledgerRed,
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.charcoal, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.close, color: Colors.white, size: 15),
+                child: const Icon(Icons.close, color: Colors.white, size: 20),
               ),
             ),
           ),
         if (widget.isEditMode)
           Positioned(
-            bottom: -8,
-            right: -8,
+            bottom: -11,
+            right: -11,
             child: GestureDetector(
               onTap: _pickImage,
               child: Container(
-                width: 26,
-                height: 26,
+                width: 39,
+                height: 39,
                 decoration: BoxDecoration(
                   color: AppColors.ledAmber,
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.charcoal, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: _picking
                     ? const Padding(
-                        padding: EdgeInsets.all(5),
+                        padding: EdgeInsets.all(8),
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: Color(0xFF3A2600),
                         ),
                       )
-                    : const Icon(Icons.photo_camera, color: Color(0xFF3A2600), size: 14),
+                    : const Icon(Icons.photo_camera, color: Color(0xFF3A2600), size: 18),
               ),
             ),
           ),
