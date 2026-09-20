@@ -516,6 +516,14 @@ class _RecipeEditorState extends State<RecipeEditor> {
                           icon: const Icon(Icons.delete_outline, color: AppColors.ledgerRed, size: 20),
                           onPressed: () => _removeRow(index),
                           tooltip: 'Remove',
+                          // See ProductVariantEditor's delete button for why
+                          // this is pinned explicitly instead of relying on
+                          // the theme's default tap target.
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(44, 44),
+                            tapTargetSize: MaterialTapTargetSize.padded,
+                            visualDensity: VisualDensity.standard,
+                          ),
                         ),
                       ],
                     ),

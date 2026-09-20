@@ -273,6 +273,16 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
                     icon: const Icon(Icons.delete_outline, color: AppColors.ledgerRed, size: 20),
                     onPressed: () => _removeRow(index),
                     tooltip: 'Remove size',
+                    // Explicit minimum tap size — don't rely on the
+                    // default 48x48, since a compact VisualDensity
+                    // anywhere above this widget (common in dense
+                    // admin/POS screens) silently shrinks it below a
+                    // comfortable touch target.
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      tapTargetSize: MaterialTapTargetSize.padded,
+                      visualDensity: VisualDensity.standard,
+                    ),
                   ),
                 ],
               ),
