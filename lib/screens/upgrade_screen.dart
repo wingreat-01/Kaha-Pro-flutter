@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/store_provider.dart';
@@ -109,11 +110,12 @@ const List<_PlanInfo> _kPlans = [
 /// real purchase sheet via BillingProvider -- there is no more
 /// "we'll reach out" placeholder flow. What happens AFTER a purchase
 /// comes back as successful (updating stores.plan) still depends on
-/// a server-side verification Edge Function that hasn't been built
-/// yet -- see BillingProvider._verifyAndActivate's doc comment. Until
-/// that exists, a real purchase can complete in the Play Store sense
-/// without stores.plan actually changing -- expected during this
-/// build phase, not a bug in this screen.
+/// verify-purchase, the server-side Edge Function -- see
+/// BillingProvider's class doc comment. BillingProvider.onPlanActivated
+/// is wired below (in initState) to StoreProvider.loadFromSupabase, so
+/// once verify-purchase confirms the purchase and updates the DB, this
+/// screen's "CURRENT PLAN" badge and feature gates elsewhere in the
+/// app pick up the new plan without requiring a fresh login.
 class UpgradeScreen extends StatefulWidget {
   const UpgradeScreen({super.key});
 
@@ -134,7 +136,25 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
     // fresh if this is the first screen that's touched billing this
     // session.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BillingProvider>().init();
+      if (!mounted) return;
+      if (kIsWeb) {
+        // Play Billing only exists inside the Android Play Store app
+        // -- there's no web equivalent, and in_app_purchase_android
+        // has no web implementation to even call. Skip init()
+        // entirely rather than let isAvailable() throw against a
+        // platform channel that doesn't exist here.
+        return;
+      }
+      final billing = context.read<BillingProvider>();
+      final store = context.read<StoreProvider>();
+      // Capture the StoreProvider instance itself, not context -- a
+      // purchase can still be verifying after the user navigates away
+      // from this screen (e.g. backgrounds the app during Play's
+      // sheet), and StoreProvider outlives this screen for the whole
+      // app session, so this stays safe to call whenever
+      // verify-purchase actually responds.
+      billing.onPlanActivated = () => store.loadFromSupabase();
+      billing.init();
     });
   }
 
@@ -199,7 +219,9 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
   Widget build(BuildContext context) {
     final store = context.watch<StoreProvider>().store;
     final billing = context.watch<BillingProvider>();
-    _maybeShowPurchaseError(context, billing);
+    if (!kIsWeb) {
+      _maybeShowPurchaseError(context, billing);
+    }
 
     // A store manually flipped to the 'expired' testing value (see
     // Store.isExpired) isn't really "on" any real plan -- treat it as
@@ -233,7 +255,21 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                 ),
               ),
             ],
-            if (billing.loadError != null) ...[
+            if (kIsWeb) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.textMuted.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Upgrading is available in the MERQ Android app.',
+                  style: AppTextStyles.body(size: 13, weight: FontWeight.w600, color: AppColors.textSecondary),
+                ),
+              ),
+            ],
+            if (!kIsWeb && billing.loadError != null) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.all(14),
@@ -249,6 +285,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                 plan: plan,
                 isCurrent: plan.id == currentPlanId,
                 purchaseInProgress: billing.purchaseInProgress,
+                isWeb: kIsWeb,
                 onChoosePeriod: () => _choosePeriod(context, plan),
               ),
           ],
@@ -293,12 +330,14 @@ class _PlanCard extends StatelessWidget {
   final _PlanInfo plan;
   final bool isCurrent;
   final bool purchaseInProgress;
+  final bool isWeb;
   final VoidCallback onChoosePeriod;
 
   const _PlanCard({
     required this.plan,
     required this.isCurrent,
     required this.purchaseInProgress,
+    required this.isWeb,
     required this.onChoosePeriod,
   });
 
@@ -380,6 +419,14 @@ class _PlanCard extends StatelessWidget {
             // it's a one-time onboarding period, not a plan you can
             // switch back to (see UpgradeScreen doc comment).
             Text(plan.footnote!, style: AppTextStyles.body(size: 12, color: AppColors.textMuted))
+          else if (isWeb)
+            // No Play Billing equivalent exists on web -- showing a
+            // disabled/dead Choose button would look broken rather
+            // than explain why nothing happens when tapped.
+            Text(
+              'Available in the Android app',
+              style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+            )
           else
             SizedBox(
               width: double.infinity,

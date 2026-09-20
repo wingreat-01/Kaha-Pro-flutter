@@ -1,4 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for any network access (Supabase, etc.) in release
+         builds — debug builds get this for free from
+         android/app/src/debug/AndroidManifest.xml, which only merges
+         into debug, so it has to be declared here too or every
+         network call fails in a release/production build. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required for Google Play Billing. in_app_purchase_android's
+         own AAR manifest usually merges this in automatically, but
+         declaring it explicitly removes any doubt. -->
+    <uses-permission android:name="com.android.vending.BILLING" />
+
     <application
         android:label="MERQ"
         android:name="${applicationName}"

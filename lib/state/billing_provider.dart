@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Subscription product IDs -- these must exactly match the
 /// Subscription IDs you create in Play Console under
@@ -35,16 +36,15 @@ enum BillingPeriod { monthly, yearly }
 
 /// Wraps the in_app_purchase plugin for MERQ's three paid plans.
 ///
-/// This is CLIENT-SIDE ONLY. It can launch Google's purchase sheet
-/// and tell you a purchase came back as "purchased", but it cannot
-/// by itself prove the purchase is real or safely update
-/// stores.plan/ai_credits_remaining -- that's the job of a separate
-/// Supabase Edge Function (server side, not built yet) that this
-/// provider will call once a purchase comes back, passing along the
-/// purchase token for verification against the Play Developer API.
-/// Until that function exists, [_verifyAndActivate] is a stub that
-/// only logs -- see its doc comment for what it needs to do once the
-/// server side lands.
+/// The in_app_purchase plugin can launch Google's purchase sheet and
+/// tell you a purchase came back as "purchased", but that alone
+/// isn't proof the purchase is real -- [_verifyAndActivate] sends the
+/// purchase token to the verify-purchase Supabase Edge Function,
+/// which checks it against the Play Developer API and only then
+/// updates stores.plan / ai_credits_remaining server-side. Local
+/// state (e.g. StoreProvider) should be refreshed only after that
+/// call succeeds, never on the strength of the client-side
+/// "purchased" status by itself.
 class BillingProvider extends ChangeNotifier {
   final InAppPurchase _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _subscription;
@@ -61,6 +61,15 @@ class BillingProvider extends ChangeNotifier {
   /// second tap can't launch two purchase flows at once.
   bool purchaseInProgress = false;
   String? purchaseError;
+
+  /// Optional hook set by whoever constructs this provider (e.g.
+  /// main.dart's MultiProvider setup), called after verify-purchase
+  /// confirms a purchase and the DB has been updated -- wire this to
+  /// whatever makes StoreProvider re-fetch the store row, so the UI
+  /// picks up the new plan without waiting on its own poll/refresh
+  /// cycle. Safe to leave unset; the DB update still happens either
+  /// way, this just controls how fast the UI reflects it.
+  Future<void> Function()? onPlanActivated;
 
   Future<void> init() async {
     isAvailable = await _iap.isAvailable();
@@ -183,8 +192,11 @@ class BillingProvider extends ChangeNotifier {
 
         case PurchaseStatus.purchased:
         case PurchaseStatus.restored:
-          _verifyAndActivate(purchase);
-          purchaseInProgress = false;
+          // Left true until _verifyAndActivate finishes -- the
+          // purchase sheet closing isn't the point where the UI
+          // should re-enable Choose buttons; the plan hasn't
+          // actually changed until the server confirms it.
+          unawaited(_verifyAndActivate(purchase));
           break;
       }
 
@@ -195,26 +207,39 @@ class BillingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// STUB -- server side not built yet. Once the Supabase Edge
-  /// Function exists, this should:
-  ///   1. POST purchase.verificationData.serverVerificationData (the
-  ///      purchase token) and purchase.productID to that function
-  ///   2. The function verifies the token against the Play Developer
-  ///      API and updates stores.plan / ai_credits_remaining
-  ///   3. Only on a verified response should local state (e.g.
-  ///      StoreProvider) be told to reload -- don't treat the local
-  ///      "purchased" status alone as proof the plan actually changed
-  ///
-  /// For now this just logs, so the purchase flow can be exercised
-  /// end-to-end in the Play Console sandbox (License Testers) without
-  /// the plan actually changing yet -- that gap is expected until the
-  /// server half is built, not a bug in this stub.
+  /// Sends the purchase token to the verify-purchase Edge Function,
+  /// which checks it against the Play Developer API and, if valid,
+  /// updates stores.plan / ai_credits_remaining server-side. Only on
+  /// a successful response do we call [onPlanActivated] -- the
+  /// client-side "purchased" status from Play is never treated as
+  /// proof by itself that the plan actually changed.
   Future<void> _verifyAndActivate(PurchaseDetails purchase) async {
-    debugPrint(
-      'TODO: verify purchase server-side. '
-      'productId=${purchase.productID}, '
-      'token=${purchase.verificationData.serverVerificationData}',
-    );
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'verify-purchase',
+        body: {
+          'productId': purchase.productID,
+          'purchaseToken': purchase.verificationData.serverVerificationData,
+        },
+      );
+
+      if (response.status != 200) {
+        final message = response.data is Map ? response.data['error'] : null;
+        purchaseError = message?.toString() ?? 'Could not verify your purchase. Please contact support.';
+        debugPrint('verify-purchase failed (${response.status}): ${response.data}');
+      } else {
+        purchaseError = null;
+        if (onPlanActivated != null) {
+          await onPlanActivated!();
+        }
+      }
+    } catch (e) {
+      purchaseError = 'Could not verify your purchase: $e';
+      debugPrint('verify-purchase threw: $e');
+    } finally {
+      purchaseInProgress = false;
+      notifyListeners();
+    }
   }
 
   @override
