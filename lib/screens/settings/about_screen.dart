@@ -99,7 +99,7 @@ class _AboutScreenState extends State<AboutScreen> {
             const SizedBox(height: 28),
             Center(
               child: Text(
-                'Made for Philippine small businesses 🇵🇭',
+                'Your Business, Simplified',
                 style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
               ),
             ),

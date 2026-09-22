@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../models/user.dart';
 import '../widgets/checkout_warmup.dart';
@@ -145,6 +146,68 @@ class _HomeShellState extends State<HomeShell> {
                 onLogout: widget.onLogout,
               )
             : RegisterScreen(cashierName: widget.user.name);
+    }
+  }
+
+  /// Ends the owner's Supabase Auth session entirely -- distinct from
+  /// widget.onLogout, which only clears the PIN-level session (see
+  /// main.dart's onLogout doc comment: that one deliberately does NOT
+  /// call signOut(), so "next staffer, same register" doesn't bounce
+  /// the whole device back to StoreSetupScreen). This DOES call
+  /// signOut(), which is the whole point -- main.dart's auth state
+  /// stream picks up the cleared session and routes back to
+  /// StoreSetupScreen, where a different email can sign in or create
+  /// a new store. Admin-only and behind a confirmation dialog since
+  /// it affects the whole register, not just the tapping staffer.
+  Future<void> _confirmSignOutOfStore(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.slate,
+        title: Text('Sign out of store?', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
+        content: Text(
+          'This signs out of this store completely on this device. Everyone here will need to sign back in with an email and password (not a PIN) to use it again, including you.',
+          style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Sign out of store', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledgerRed)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      // Captured before the await: HomeShell may be gone by the time
+      // signOut() returns, and this callback belongs to main.dart.
+      final onLogout = widget.onLogout;
+      try {
+        await Supabase.instance.client.auth.signOut();
+        // main.dart only mounts its auth StreamBuilder while no PIN
+        // user is logged in (home: _loggedInUser != null ? HomeShell :
+        // StreamBuilder). So clearing the Supabase session alone never
+        // changes the screen -- HomeShell stays put. Clearing the PIN
+        // session too lets the StreamBuilder mount, see a null session,
+        // and route to StoreSetupScreen.
+        onLogout();
+      } catch (e) {
+        // Without this, a thrown exception here (network blip, etc.)
+        // failed completely silently -- no error shown, no screen
+        // change, indistinguishable from the button doing nothing at
+        // all. Same class of bug as buySubscription's originally
+        // unguarded buyNonConsumable call.
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not sign out: $e', style: AppTextStyles.body(size: 13)),
+            backgroundColor: AppColors.ledgerRed,
+          ),
+        );
+      }
     }
   }
 
@@ -315,11 +378,38 @@ class _HomeShellState extends State<HomeShell> {
               onTap: () => setState(() => _section = _Section.settings),
               showWarningDot: planNeedsAttention,
             ),
-          IconButton(
-            icon: Icon(Icons.logout, color: AppColors.textSecondary),
-            tooltip: 'Logout',
-            onPressed: widget.onLogout,
-          ),
+          if (_isAdmin)
+            // Admins get both options, kept visually and functionally
+            // distinct so an everyday "done with my shift" tap can't
+            // accidentally sign the whole store out. Non-admins never
+            // see "Sign out of store" at all -- switching which
+            // store/email this device is tied to is an owner/admin
+            // decision, not something a cashier should be able to
+            // trigger from the register.
+            PopupMenuButton<String>(
+              icon: Icon(Icons.logout, color: AppColors.textSecondary),
+              tooltip: 'Logout options',
+              onSelected: (value) {
+                if (value == 'pin') {
+                  widget.onLogout();
+                } else if (value == 'store') {
+                  _confirmSignOutOfStore(context);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'pin', child: Text('Log out')),
+                PopupMenuItem(
+                  value: 'store',
+                  child: Text('Sign out of store', style: TextStyle(color: AppColors.ledgerRed)),
+                ),
+              ],
+            )
+          else
+            IconButton(
+              icon: Icon(Icons.logout, color: AppColors.textSecondary),
+              tooltip: 'Logout',
+              onPressed: widget.onLogout,
+            ),
           const SizedBox(width: 12),
         ],
       ),

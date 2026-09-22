@@ -160,8 +160,12 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Explicit (it's the default) so the body always shrinks when the
+      // keyboard opens instead of the keyboard covering the fields.
+      resizeToAvoidBottomInset: true,
       body: Center(
         child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 380),
@@ -523,6 +527,13 @@ class _SetupFieldState extends State<_SetupField> {
         TextField(
           controller: widget.controller,
           obscureText: widget.obscure && _obscured,
+          // When this field gains focus, Flutter scrolls it into view
+          // keeping this much clearance from the edges. The default (20)
+          // leaves the password field flush against the keyboard, and
+          // the button/error text below it hidden. The large bottom
+          // value lifts it clear so the field and its show/hide icon
+          // stay visible while typing.
+          scrollPadding: const EdgeInsets.fromLTRB(20, 20, 20, 160),
           style: AppTextStyles.body(size: 14),
           decoration: InputDecoration(
             hintText: widget.hint,

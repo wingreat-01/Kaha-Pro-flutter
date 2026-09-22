@@ -137,6 +137,13 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
     // session.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // The plan can change on the server without this app doing
+      // anything (Play cancellation/expiry notifications downgrade the
+      // store via rtdn-webhook), and StoreProvider only fetches at
+      // login and after a purchase. Without a refetch here, "current
+      // plan" could keep showing a stale paid plan until the app was
+      // fully restarted.
+      context.read<StoreProvider>().loadFromSupabase();
       if (kIsWeb) {
         // Play Billing only exists inside the Android Play Store app
         // -- there's no web equivalent, and in_app_purchase_android
@@ -235,6 +242,26 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         backgroundColor: AppColors.slate,
         elevation: 0,
         title: Text('Choose a plan', style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, letterSpacing: 1)),
+        actions: [
+          // Play Billing won't let you "buy" a subscription you're
+          // already subscribed to -- if verify-purchase failed
+          // server-side after a real purchase went through (e.g. a
+          // misconfigured secret), this is how you re-trigger
+          // _verifyAndActivate for that existing purchase without
+          // needing a fresh purchase. Visible any time (not just on
+          // error) since it's also the Play-required way to recover
+          // a subscription after reinstall.
+          if (!kIsWeb)
+            TextButton(
+              onPressed: billing.purchaseInProgress
+                  ? null
+                  : () => context.read<BillingProvider>().restorePurchases(),
+              child: Text(
+                'Restore',
+                style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledAmber),
+              ),
+            ),
+        ],
       ),
       body: BoundedContent(
         child: ListView(

@@ -412,3 +412,10 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# rtdn-webhook is called by Google Cloud Pub/Sub's push subscription,
+# which cannot attach a Supabase session JWT to its requests. Auth for
+# this endpoint is instead a `?token=` query param checked against the
+# RTDN_WEBHOOK_SECRET secret inside the function itself.
+[functions.rtdn-webhook]
+verify_jwt = false
