@@ -33,6 +33,7 @@ class _UsersPanelState extends State<UsersPanel> {
   Widget build(BuildContext context) {
     final provider = context.watch<UserProvider>();
     final users = provider.users;
+    final limit = provider.staffLimit;
 
     return Scaffold(
       backgroundColor: AppColors.charcoal,
@@ -49,30 +50,59 @@ class _UsersPanelState extends State<UsersPanel> {
         label: const Text('Add user'),
       ),
       body: BoundedContent(
-        child: provider.loading && users.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-            : provider.error != null && users.isEmpty
-                ? Center(
-                    child: Text(
-                      provider.error!,
-                      style: AppTextStyles.body(size: 14, color: AppColors.ledgerRed),
+        child: Column(
+          children: [
+            // limit == null covers both "unlimited plan" and "plan not
+            // loaded yet" (see UserProvider.staffLimit) — either way,
+            // showing nothing here is correct: there's no cap to report,
+            // or not one we can vouch for yet.
+            if (limit != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  children: [
+                    Text(
+                      '${provider.activeStaffCount} of $limit staff used',
+                      style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
                     ),
-                  )
-                : users.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No users yet',
-                          style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
-                        ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: () => context.read<UserProvider>().loadFromSupabase(),
-                        child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                          itemCount: users.length,
-                          itemBuilder: (context, i) => _UserRow(user: users[i]),
-                        ),
+                    if (provider.isAtStaffLimit) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '· upgrade for more',
+                        style: AppTextStyles.body(size: 12, color: AppColors.ledAmber),
                       ),
+                    ],
+                  ],
+                ),
+              ),
+            Expanded(
+              child: provider.loading && users.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : provider.error != null && users.isEmpty
+                      ? Center(
+                          child: Text(
+                            provider.error!,
+                            style: AppTextStyles.body(size: 14, color: AppColors.ledgerRed),
+                          ),
+                        )
+                      : users.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No users yet',
+                                style: AppTextStyles.body(size: 14, color: AppColors.textSecondary),
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: () => context.read<UserProvider>().loadFromSupabase(),
+                              child: ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                                itemCount: users.length,
+                                itemBuilder: (context, i) => _UserRow(user: users[i]),
+                              ),
+                            ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -292,7 +322,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Something went wrong saving this user. Please try again.';
+        // StaffLimitExceededException carries a real, user-facing
+        // reason (local pre-check, or the enforce_staff_limit trigger
+        // rejecting a stale add — see UserProvider.addUser) — show it
+        // as-is instead of the generic fallback below.
+        _error = e is StaffLimitExceededException
+            ? e.message
+            : 'Something went wrong saving this user. Please try again.';
         _saving = false;
       });
     }
