@@ -64,7 +64,7 @@ const List<_PlanInfo> _kPlans = [
     monthlyPrice: '₱190/mo',
     yearlyPrice: '₱1,900/yr',
     features: [
-      '1 staff account',
+      '2 staff account',
       '30 days transaction history',
       '30 AI assistant credits / month',
       'Up to 50 products',

@@ -1,24 +1,25 @@
+// supabase/functions/confirm-account-deletion/index.ts
 // Deploy with: supabase functions deploy confirm-account-deletion --no-verify-jwt
 //
-// Called from confirm-delete.html when the user clicks the emailed link.
+// Called from confirm-delete.html when the user presses the confirm button.
 // Possession of a valid, unexpired, unused token IS the authentication
-// here — that's the whole point of emailing it to the account's own
+// here: that's the whole point of emailing it to the account's own
 // address first.
 //
-// IMPORTANT: this explicitly deletes every table's rows for the user's
-// store(s), rather than relying on ON DELETE CASCADE from auth.users.
-// That's deliberate — stores.id has no foreign key pointing at
-// auth.users (ownership is tracked via store_members instead), so
-// deleting the auth user alone never reaches the store, its products,
-// its transactions, etc. Confirmed by testing: the auth login was gone
-// but the stores row was still sitting there untouched.
+// Store data is removed by the delete_account_cascade(store_id) SQL
+// function: one atomic transaction that deletes every table in the right
+// order (including un-protecting categories so the "protected fallback
+// category" trigger doesn't block the delete). If it fails, nothing is
+// removed and the token is freed so the link can be retried.
 //
-// Deletion always wipes the ENTIRE store the account belongs to,
-// regardless of whether the account is an owner or staff member — this
-// matches the current single-owner testing setup. If MERQ later
-// supports multiple staff logins per store in production, revisit this:
-// you likely don't want one staff member deleting their own account to
-// also delete the owner's whole store out from under them.
+// The auth user is deleted only AFTER every store's data is gone. Deleting
+// the login first would cascade away store_members and leave the store
+// orphaned with no owner.
+//
+// Deletion wipes the ENTIRE store the account belongs to, regardless of
+// whether the account is an owner or staff member. This matches the
+// current single-owner setup. If MERQ later supports multiple logins per
+// store, revisit this.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -39,77 +40,13 @@ function jsonResponse(body: unknown, status: number) {
   });
 }
 
-// Deletes everything belonging to a single store, in dependency order
-// (children before parents), then the store row itself. Each step is
-// logged and wrapped so a schema mismatch on one table doesn't abort
-// the whole cleanup — better to delete what we can and log the rest
-// than leave everything in place on one unexpected error.
-async function deleteStoreData(storeId: string) {
-  const steps: Array<{ label: string; run: () => Promise<{ error: any }> }> = [
-    {
-      label: "transaction_line_items (via this store's transactions)",
-      run: async () => {
-        const { data: txRows } = await supabase
-          .from("transactions")
-          .select("id")
-          .eq("store_id", storeId);
-        const txIds = (txRows ?? []).map((t: any) => t.id);
-        if (txIds.length === 0) return { error: null };
-        return await supabase.from("transaction_line_items").delete().in("transaction_id", txIds);
-      },
-    },
-    { label: "transactions", run: () => supabase.from("transactions").delete().eq("store_id", storeId) },
-    {
-      label: "ingredient_stock_movements",
-      run: () => supabase.from("ingredient_stock_movements").delete().eq("store_id", storeId),
-    },
-    {
-      label: "product_recipe_items (via this store's products)",
-      run: async () => {
-        const { data: productRows } = await supabase
-          .from("products")
-          .select("id")
-          .eq("store_id", storeId);
-        const productIds = (productRows ?? []).map((p: any) => p.id);
-        if (productIds.length === 0) return { error: null };
-        return await supabase.from("product_recipe_items").delete().in("product_id", productIds);
-      },
-    },
-    {
-      label: "product_variants (via this store's products)",
-      run: async () => {
-        const { data: productRows } = await supabase
-          .from("products")
-          .select("id")
-          .eq("store_id", storeId);
-        const productIds = (productRows ?? []).map((p: any) => p.id);
-        if (productIds.length === 0) return { error: null };
-        return await supabase.from("product_variants").delete().in("product_id", productIds);
-      },
-    },
-    { label: "purchase_verifications", run: () => supabase.from("purchase_verifications").delete().eq("store_id", storeId) },
-    { label: "products", run: () => supabase.from("products").delete().eq("store_id", storeId) },
-    { label: "ingredients", run: () => supabase.from("ingredients").delete().eq("store_id", storeId) },
-    { label: "categories", run: () => supabase.from("categories").delete().eq("store_id", storeId) },
-    { label: "payment_methods", run: () => supabase.from("payment_methods").delete().eq("store_id", storeId) },
-    { label: "staff_users", run: () => supabase.from("staff_users").delete().eq("store_id", storeId) },
-    { label: "store_counters", run: () => supabase.from("store_counters").delete().eq("store_id", storeId) },
-    { label: "store_members", run: () => supabase.from("store_members").delete().eq("store_id", storeId) },
-    { label: "stores", run: () => supabase.from("stores").delete().eq("id", storeId) },
-  ];
-
-  for (const step of steps) {
-    try {
-      const { error } = await step.run();
-      if (error) {
-        console.error(`Cleanup step failed [${step.label}] for store ${storeId}:`, error);
-      } else {
-        console.log(`Cleanup step OK [${step.label}] for store ${storeId}`);
-      }
-    } catch (err) {
-      console.error(`Cleanup step threw [${step.label}] for store ${storeId}:`, err);
-    }
-  }
+// Puts the token back into a usable state so the emailed link can be retried.
+async function freeToken(requestId: string) {
+  const { error } = await supabase
+    .from("account_deletion_requests")
+    .update({ used_at: null })
+    .eq("id", requestId);
+  if (error) console.error("Failed to free token for retry", error);
 }
 
 Deno.serve(async (req) => {
@@ -143,37 +80,48 @@ Deno.serve(async (req) => {
     }
 
     // Mark used BEFORE deleting anything, so a double-click or network
-    // retry can't trigger this twice.
+    // retry can't trigger this twice. It is freed again below if the
+    // deletion fails.
     await supabase
       .from("account_deletion_requests")
       .update({ used_at: new Date().toISOString() })
       .eq("id", request.id);
 
-    // Find every store this account belongs to and wipe each one
-    // completely, table by table, before touching the auth user itself.
     const { data: memberRows, error: memberErr } = await supabase
       .from("store_members")
       .select("store_id")
       .eq("auth_user_id", request.user_id);
 
     if (memberErr) {
+      // Abort: deleting the login would cascade away store_members
+      // and orphan the store for good.
       console.error("Failed to look up store memberships", memberErr);
+      await freeToken(request.id);
+      return jsonResponse({ error: "Could not look up your store. Please try again." }, 500);
     }
 
     const storeIds = [...new Set((memberRows ?? []).map((m: any) => m.store_id))];
 
     for (const storeId of storeIds) {
-      await deleteStoreData(storeId);
+      const { error: cascadeError } = await supabase.rpc("delete_account_cascade", {
+        p_store_id: storeId,
+      });
+      if (cascadeError) {
+        console.error(`delete_account_cascade failed for store ${storeId}:`, cascadeError);
+        await freeToken(request.id);
+        return jsonResponse(
+          { error: "Could not delete your data. Please try again or contact merq@prohubapps.com." },
+          500,
+        );
+      }
+      console.log(`delete_account_cascade OK for store ${storeId}`);
     }
 
-    // Now delete the auth user itself. Any remaining store_members rows
-    // for this user (e.g. if the store lookup above found nothing) are
-    // cleaned up here too, if that FK cascade is in place — a harmless
-    // no-op otherwise since we already deleted them per-store above.
+    // Every store's data is gone; now remove the login itself.
     const { error: deleteErr } = await supabase.auth.admin.deleteUser(request.user_id);
 
     if (deleteErr) {
-      console.error("Failed to delete auth user", deleteErr);
+      console.error("Failed to delete auth user after data was removed", deleteErr);
       return jsonResponse(
         {
           error:
@@ -188,7 +136,7 @@ Deno.serve(async (req) => {
       200,
     );
   } catch (err) {
-    console.error(err);
+    console.error("confirm-account-deletion unhandled exception:", err instanceof Error ? err.stack ?? err.message : err);
     return jsonResponse({ error: "Something went wrong" }, 500);
   }
 });

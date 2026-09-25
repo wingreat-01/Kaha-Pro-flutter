@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'services/device_session_service.dart';
 import 'theme/app_theme.dart';
 import 'state/theme_provider.dart';
 import 'models/user.dart';
@@ -99,6 +101,14 @@ class _KahaproAppState extends State<KahaproApp> with WidgetsBindingObserver {
 
   late final Stream<AuthState> _authStream;
 
+  // Single-active-device enforcement (see device_session_service.dart
+  // + store_setup_screen.dart, which claims the slot at sign-in time).
+  // This periodic check + the resumed-lifecycle check both cover the
+  // case where THIS device was the one holding the claim and another
+  // device has since force-claimed it -- that device has no way to
+  // reach this one directly, so this device has to notice on its own.
+  Timer? _deviceCheckTimer;
+
   @override
   void initState() {
     super.initState();
@@ -107,11 +117,13 @@ class _KahaproAppState extends State<KahaproApp> with WidgetsBindingObserver {
     // their OS dark/light setting while the app is open, rather than
     // only picking it up on next launch.
     WidgetsBinding.instance.addObserver(this);
+    _deviceCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) => _verifyDeviceClaim());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _deviceCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -121,6 +133,30 @@ class _KahaproAppState extends State<KahaproApp> with WidgetsBindingObserver {
     // Light/Dark this is a no-op rebuild. Cheap enough not to bother
     // checking themeProvider.mode first.
     setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Catches "was evicted while this device was backgrounded" as
+    // soon as the owner opens the app again, rather than waiting up
+    // to 5 minutes for the next periodic check.
+    if (state == AppLifecycleState.resumed) {
+      _verifyDeviceClaim();
+    }
+  }
+
+  /// No-op if there's no owner session at all (nothing to enforce
+  /// pre-login) or if this device still holds the claim. Otherwise
+  /// signs out of both the Supabase Auth session and the PIN-level
+  /// session, so a returning owner lands back on StoreSetupScreen
+  /// with a clear "signed in elsewhere" path rather than mid-register
+  /// on a store they've just lost access to.
+  Future<void> _verifyDeviceClaim() async {
+    if (Supabase.instance.client.auth.currentSession == null) return;
+    final stillOk = await DeviceSessionService.stillClaimed();
+    if (stillOk) return;
+    await Supabase.instance.client.auth.signOut();
+    if (mounted) setState(() => _loggedInUser = null);
   }
 
   Future<bool> _hasStaffUsers() async {

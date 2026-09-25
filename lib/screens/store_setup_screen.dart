@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
+import '../services/device_session_service.dart';
 
 // Play Store requires a privacy policy link reachable from within the
 // app itself (not just the Play Console listing), and reviewers check
@@ -49,6 +51,13 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   String? _error;
   String? _info;
 
+  // Set when a sign-in succeeded against Supabase Auth but this
+  // device lost the single-active-device claim to a different one --
+  // see DeviceSessionService. Non-null while the "already signed in
+  // elsewhere" state is showing, so the UI can offer the force-claim
+  // recovery action instead of just a plain error.
+  String? _blockedByDeviceLabel;
+
   // Defaults to 'general' ("Raw Materials") -- matches the
   // backward-compatible default on the stores.business_type column,
   // so an owner who doesn't touch this selector still gets a sane
@@ -59,6 +68,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     setState(() {
       _error = null;
       _info = null;
+      _blockedByDeviceLabel = null;
       _loading = true;
     });
 
@@ -79,6 +89,11 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
           email: email,
           password: password,
         );
+        // A live Supabase session now exists on this device regardless
+        // of what happens next -- _claimThisDevice() below is what
+        // decides whether it's allowed to stay that way.
+        final claimed = await _claimThisDevice();
+        if (!claimed) return;
         // Success falls through with no navigation call -- the auth
         // state stream in main.dart picks up the new session.
       } else {
@@ -113,8 +128,13 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
           });
           return;
         }
-        // Confirmation is off -- session came back immediately, and
-        // the auth state stream in main.dart takes it from here.
+        // Confirmation is off -- session came back immediately. A
+        // brand-new account can't already have another device holding
+        // a claim, but claiming here still seeds the row so this
+        // device is the recorded one from the start.
+        final claimed = await _claimThisDevice();
+        if (!claimed) return;
+        // The auth state stream in main.dart takes it from here.
       }
     } on AuthException catch (e) {
       setState(() {
@@ -131,6 +151,83 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     }
 
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Attempts to claim the single-active-device slot for this login.
+  /// Called right after a successful signInWithPassword()/signUp(), so
+  /// a real session already exists on this device either way -- if the
+  /// claim is refused, this signs that session back out immediately so
+  /// "blocked" actually means blocked, not "logged in but nagged."
+  ///
+  /// Returns true if this device now holds the claim (caller should
+  /// fall through as a normal successful login). Returns false if it
+  /// was refused (caller should return immediately -- _blockedByDeviceLabel
+  /// and _loading are already set here).
+  Future<bool> _claimThisDevice({bool force = false}) async {
+    final result = await DeviceSessionService.claim(
+      deviceLabel: _deviceLabel(),
+      force: force,
+    );
+    if (result.allowed) return true;
+
+    // Refused -- sign this device's brand-new session back out so it
+    // can't quietly keep using the app while showing an error.
+    await Supabase.instance.client.auth.signOut();
+    if (!mounted) return false;
+    setState(() {
+      _loading = false;
+      _blockedByDeviceLabel = result.existingDeviceLabel ?? 'another device';
+    });
+    return false;
+  }
+
+  /// Best-effort human label for this device, shown to the owner on
+  /// the *other* device as "signed in on <label>" -- not a security
+  /// boundary, just context. Platform-only (no device_info_plus
+  /// dependency) since exact model name isn't worth a new package here.
+  String _deviceLabel() {
+    if (kIsWeb) return 'a web browser';
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'an Android device',
+      TargetPlatform.iOS => 'an iPhone/iPad',
+      TargetPlatform.windows => 'a Windows PC',
+      TargetPlatform.macOS => 'a Mac',
+      TargetPlatform.linux => 'a Linux device',
+      _ => 'another device',
+    };
+  }
+
+  /// Re-signs in with the same credentials and forces the claim,
+  /// evicting whatever device currently holds it. Reuses the password
+  /// already typed in -- if the person navigated away and it's been
+  /// cleared, this just surfaces the normal "enter password" error via
+  /// _submit()'s existing empty-field check.
+  Future<void> _forceSignOutOtherDevice() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    try {
+      await Supabase.instance.client.auth.signInWithPassword(email: email, password: password);
+      await _claimThisDevice(force: true);
+      if (!mounted) return;
+      setState(() {
+        _blockedByDeviceLabel = null;
+        _loading = false;
+      });
+    } on AuthException catch (e) {
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Something went wrong. Please try again.';
+        _loading = false;
+      });
+    }
   }
 
   void _toggleMode() {
@@ -224,6 +321,22 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                   if (_info != null) ...[
                     const SizedBox(height: 12),
                     Text(_info!, style: AppTextStyles.body(size: 13, color: AppColors.tillGreen)),
+                  ],
+                  if (_blockedByDeviceLabel != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'This account is already signed in on ${_blockedByDeviceLabel!}. '
+                      'Sign out there first, or force it out below.',
+                      style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _loading ? null : _forceSignOutOtherDevice,
+                      child: Text(
+                        'Force sign out other device and continue',
+                        style: AppTextStyles.body(size: 12.5, weight: FontWeight.w700, color: AppColors.ledAmber),
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 22),
                   SizedBox(

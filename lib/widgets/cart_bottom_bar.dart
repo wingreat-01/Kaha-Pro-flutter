@@ -28,67 +28,70 @@ class CartBottomBar extends StatelessWidget {
             return ListenableBuilder(
               listenable: cart,
               builder: (context, _) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.slate,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: AppColors.slateBorder,
-                          borderRadius: BorderRadius.circular(2),
+                return SafeArea(
+                  top: false,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.slate,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 10),
+                        Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.slateBorder,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: Row(
-                          children: [
-                            Text('CURRENT ORDER',
-                                style: AppTextStyles.mono(
-                                    size: 12, weight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.5)),
-                            const Spacer(),
-                            if (!cart.isEmpty)
-                              TextButton(
-                                onPressed: cart.clear,
-                                child: Text('Clear', style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed)),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: Row(
+                            children: [
+                              Text('CURRENT ORDER',
+                                  style: AppTextStyles.mono(
+                                      size: 12, weight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.5)),
+                              const Spacer(),
+                              if (!cart.isEmpty)
+                                TextButton(
+                                  onPressed: cart.clear,
+                                  child: Text('Clear', style: AppTextStyles.body(size: 12, color: AppColors.ledgerRed)),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            controller: scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: CartList(cart: cart),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              LedTotal(amount: cart.total),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: cart.isEmpty
+                                      ? null
+                                      : () {
+                                          Navigator.of(context).pop();
+                                          onCheckout();
+                                        },
+                                  child: const Text('Checkout'),
+                                ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: CartList(cart: cart),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            LedTotal(amount: cart.total),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: cart.isEmpty
-                                    ? null
-                                    : () {
-                                        Navigator.of(context).pop();
-                                        onCheckout();
-                                      },
-                                child: const Text('Checkout'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
@@ -103,28 +106,31 @@ class CartBottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => _expand(context),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
-        decoration: BoxDecoration(
-          color: AppColors.slate,
-          border: Border(top: BorderSide(color: AppColors.slateBorder, width: 1)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.shopping_bag_outlined, color: AppColors.ledAmber, size: 24),
-            const SizedBox(width: 10),
-            Text(
-              '${cart.itemCount} item${cart.itemCount == 1 ? '' : 's'}',
-              style: AppTextStyles.body(size: 15, weight: FontWeight.w600, color: AppColors.textPrimary),
-            ),
-            const Spacer(),
-            Text(
-              context.money(cart.total),
-              style: AppTextStyles.mono(size: 19, weight: FontWeight.w700, color: AppColors.ledAmber),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.keyboard_arrow_up, color: AppColors.textMuted, size: 24),
-          ],
+      child: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+          decoration: BoxDecoration(
+            color: AppColors.slate,
+            border: Border(top: BorderSide(color: AppColors.slateBorder, width: 1)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.shopping_bag_outlined, color: AppColors.ledAmber, size: 24),
+              const SizedBox(width: 10),
+              Text(
+                '${cart.itemCount} item${cart.itemCount == 1 ? '' : 's'}',
+                style: AppTextStyles.body(size: 15, weight: FontWeight.w600, color: AppColors.textPrimary),
+              ),
+              const Spacer(),
+              Text(
+                context.money(cart.total),
+                style: AppTextStyles.mono(size: 19, weight: FontWeight.w700, color: AppColors.ledAmber),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.keyboard_arrow_up, color: AppColors.textMuted, size: 24),
+            ],
+          ),
         ),
       ),
     );
