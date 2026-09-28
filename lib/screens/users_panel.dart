@@ -12,7 +12,15 @@ import '../widgets/bounded_content.dart';
 /// perspective — never displayed or pre-filled, since only a hash is
 /// ever stored.
 class UsersPanel extends StatefulWidget {
-  const UsersPanel({super.key});
+  // The currently logged-in staff member's id (SettingsPanel's
+  // staffId, itself HomeShell's widget.user.id) — only admins ever
+  // reach this screen, so this doubles as "the current admin's id".
+  // Used to stop that account from deleting itself: self-delete here
+  // has no undo path (no other admin session to log back in and
+  // re-add it) and could leave the store with zero admins.
+  final String currentStaffId;
+
+  const UsersPanel({super.key, required this.currentStaffId});
 
   @override
   State<UsersPanel> createState() => _UsersPanelState();
@@ -97,7 +105,10 @@ class _UsersPanelState extends State<UsersPanel> {
                               child: ListView.builder(
                                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                                 itemCount: users.length,
-                                itemBuilder: (context, i) => _UserRow(user: users[i]),
+                                itemBuilder: (context, i) => _UserRow(
+                                  user: users[i],
+                                  isSelf: users[i].id == widget.currentStaffId,
+                                ),
                               ),
                             ),
             ),
@@ -117,7 +128,11 @@ class _UsersPanelState extends State<UsersPanel> {
 
 class _UserRow extends StatelessWidget {
   final AppUser user;
-  const _UserRow({required this.user});
+  // True when this row is the admin currently logged in and viewing
+  // this screen — see UsersPanel.currentStaffId for why self-delete
+  // is blocked.
+  final bool isSelf;
+  const _UserRow({required this.user, required this.isSelf});
 
   @override
   Widget build(BuildContext context) {
@@ -181,9 +196,16 @@ class _UserRow extends StatelessWidget {
                 onPressed: () => _UsersPanelState._showUserForm(context, existing: user),
               ),
               IconButton(
-                icon: Icon(Icons.delete_outline, size: 20, color: AppColors.ledgerRed),
-                tooltip: 'Delete',
-                onPressed: () => _confirmDelete(context, user),
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  // Muted instead of the usual warning red once
+                  // disabled, so the row itself signals "not
+                  // available" rather than just silently no-op'ing.
+                  color: isSelf ? AppColors.textMuted : AppColors.ledgerRed,
+                ),
+                tooltip: isSelf ? "You can't delete your own account" : 'Delete',
+                onPressed: isSelf ? null : () => _confirmDelete(context, user),
               ),
             ],
           ),

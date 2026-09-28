@@ -105,7 +105,7 @@ class SettingsPanel extends StatelessWidget {
           label: 'Users',
           subtitle: 'Manage cashier & admin accounts',
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const UsersPanel()),
+            MaterialPageRoute(builder: (_) => UsersPanel(currentStaffId: staffId)),
           ),
         ),
         _SettingsRow(
