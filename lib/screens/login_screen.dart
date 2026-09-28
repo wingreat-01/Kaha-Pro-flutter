@@ -47,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _nameFocus = FocusNode();
   String? _error;
   bool _loading = false;
+  bool _signingOut = false;
 
   UserRole _parseRole(String? raw) {
     // verify_staff_login returns role as plain text ('admin' /
@@ -181,6 +182,59 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Ends the owner's Supabase Auth session so a different store can
+  /// sign in on this device -- same action and wording as
+  /// HomeShell's "Sign out of store" (_confirmSignOutOfStore), just
+  /// reachable from the PIN screen too, before any staffer has
+  /// entered a PIN. No onLogout callback to call here (unlike
+  /// HomeShell's version): main.dart's StreamBuilder is already
+  /// mounted at this point (that's the only way LoginScreen gets
+  /// shown), and it's listening to onAuthStateChange, so clearing the
+  /// session alone is enough for it to pick up session == null and
+  /// route to StoreSetupScreen on its own.
+  Future<void> _confirmSignOutOfStore() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.slate,
+        title: Text('Sign out of store?', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
+        content: Text(
+          'This signs out of this store completely on this device. Everyone here will need to sign back in with an email and password (not a PIN) to use it again.',
+          style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Sign out of store', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledgerRed)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _signingOut = true);
+    try {
+      await Supabase.instance.client.auth.signOut();
+      // Deliberately no further action on success -- the StreamBuilder
+      // above this screen swaps it out for StoreSetupScreen as soon as
+      // the auth state change lands, so this screen is about to be
+      // unmounted rather than needing to update its own state.
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _signingOut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not sign out: $e', style: AppTextStyles.body(size: 13)),
+          backgroundColor: AppColors.ledgerRed,
+        ),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -282,6 +336,20 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Forgot your PIN? Ask your admin to reset it in Settings → Users.',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: _signingOut ? null : _confirmSignOutOfStore,
+                    child: _signingOut
+                        ? SizedBox(
+                            height: 14,
+                            width: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.textMuted),
+                          )
+                        : Text(
+                            'Not your store? Sign in with email',
+                            style: AppTextStyles.body(size: 12.5, color: AppColors.textMuted),
+                          ),
                   ),
                   const SizedBox(height: 4),
                   TextButton(
