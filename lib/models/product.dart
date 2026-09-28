@@ -52,6 +52,16 @@ class Product {
                           // own flat `price` above, unchanged from before
                           // variants existed. Sorted by sortOrder by the
                           // provider on load.
+  final bool showOnQrMenu; // owner-controlled: whether this product appears
+                          // on the customer-facing QR ordering page.
+                          // Independent of stock — an untracked item like
+                          // "Chicken Fillet w/ rice" has no meaningful
+                          // stockQty and should still be toggleable on its
+                          // own. Defaults to true so every existing product
+                          // shows up on the QR menu automatically unless the
+                          // owner opts it out. get_menu_for_qr additionally
+                          // hides a tracked-stock item once stockQty hits 0,
+                          // regardless of this flag.
 
   const Product({
     required this.id,
@@ -67,6 +77,7 @@ class Product {
     this.unitLabel,
     this.costPerUnit,
     this.variants = const [],
+    this.showOnQrMenu = true,
   });
 
   bool get isLowStock => stockQty <= lowStockThreshold;
@@ -98,6 +109,7 @@ class Product {
     double? costPerUnit,
     bool clearCostPerUnit = false, // true = set cost back to "not set"
     List<ProductVariant>? variants,
+    bool? showOnQrMenu,
   }) {
     return Product(
       id: id,
@@ -113,6 +125,7 @@ class Product {
       unitLabel: unitLabel ?? this.unitLabel,
       costPerUnit: clearCostPerUnit ? null : (costPerUnit ?? this.costPerUnit),
       variants: variants ?? this.variants,
+      showOnQrMenu: showOnQrMenu ?? this.showOnQrMenu,
     );
   }
 }

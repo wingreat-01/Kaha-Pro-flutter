@@ -11,6 +11,7 @@ import 'inventory_movements_panel.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'tables_panel.dart';
+import 'qr_menu_panel.dart';
 import 'categories_panel.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
@@ -115,6 +116,14 @@ class SettingsPanel extends StatelessWidget {
           subtitle: 'Manage tables & QR ordering codes',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const TablesPanel()),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.restaurant_menu,
+          label: 'QR Menu',
+          subtitle: 'Choose which products show on the ordering page',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const QrMenuPanel()),
           ),
         ),
         _SettingsRow(

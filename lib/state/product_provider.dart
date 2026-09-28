@@ -224,6 +224,7 @@ class ProductProvider extends ChangeNotifier {
       unitLabel: row['unit_label'] as String?,
       costPerUnit: (row['cost_per_unit'] as num?)?.toDouble(),
       variants: variants,
+      showOnQrMenu: row['show_on_qr_menu'] as bool? ?? true,
     );
   }
 
@@ -777,6 +778,26 @@ class ProductProvider extends ChangeNotifier {
       await _client.from('products').update({'stock_qty': next}).eq('id', id);
     } catch (e) {
       _products[index] = _products[index].copyWith(stockQty: previous);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Toggles whether this product shows on the customer-facing QR
+  /// ordering page (Settings → QR Menu). Same optimistic-update shape
+  /// as [_writeStock] — flip locally first, roll back on failure.
+  Future<void> setQrMenuVisibility(String id, bool visible) async {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index == -1) return;
+
+    final previous = _products[index].showOnQrMenu;
+    _products[index] = _products[index].copyWith(showOnQrMenu: visible);
+    notifyListeners();
+
+    try {
+      await _client.from('products').update({'show_on_qr_menu': visible}).eq('id', id);
+    } catch (e) {
+      _products[index] = _products[index].copyWith(showOnQrMenu: previous);
       notifyListeners();
       rethrow;
     }
