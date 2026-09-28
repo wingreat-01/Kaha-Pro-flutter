@@ -10,6 +10,7 @@ import 'ingredients_panel.dart';
 import 'inventory_movements_panel.dart';
 import 'inventory_panel.dart';
 import 'users_panel.dart';
+import 'tables_panel.dart';
 import 'categories_panel.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
@@ -106,6 +107,14 @@ class SettingsPanel extends StatelessWidget {
           subtitle: 'Manage cashier & admin accounts',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => UsersPanel(currentStaffId: staffId)),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.qr_code_2,
+          label: 'Tables',
+          subtitle: 'Manage tables & QR ordering codes',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const TablesPanel()),
           ),
         ),
         _SettingsRow(

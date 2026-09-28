@@ -13,6 +13,7 @@ import 'state/recipe_provider.dart';
 import 'state/store_provider.dart';
 import 'state/transaction_provider.dart';
 import 'state/user_provider.dart';
+import 'state/table_provider.dart';
 import 'state/ai_assistant_provider.dart';
 import 'state/payment_method_provider.dart';
 import 'state/printer_provider.dart';
@@ -59,6 +60,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => StoreProvider()),
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => TableProvider()),
         ChangeNotifierProvider(create: (_) => AiAssistantProvider()),
         ChangeNotifierProvider(create: (_) => PaymentMethodProvider()),
         // ..load() restores whatever printer was saved on this device
