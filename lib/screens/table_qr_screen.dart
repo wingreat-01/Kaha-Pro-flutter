@@ -121,7 +121,7 @@ class _TableQrScreenState extends State<TableQrScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   icon: _sharing
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 16,
                           width: 16,
                           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.charcoal),
