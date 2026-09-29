@@ -15,6 +15,24 @@ class DeviceSessionService {
 
   static String? _cachedDeviceId;
 
+  // Handoff for a refused claim. Signing in makes main.dart swap
+  // StoreSetupScreen out immediately, so by the time the claim is
+  // refused the screen that started the sign-in is already disposed
+  // and can't show the "signed in on another device" message. The
+  // refusal is parked here before the forced sign-out, and the new
+  // StoreSetupScreen reads it once in initState.
+  static PendingDeviceBlock? _pendingBlock;
+
+  static void setPendingBlock({required String label, required bool viaGoogle}) {
+    _pendingBlock = PendingDeviceBlock(label: label, viaGoogle: viaGoogle);
+  }
+
+  static PendingDeviceBlock? takePendingBlock() {
+    final b = _pendingBlock;
+    _pendingBlock = null;
+    return b;
+  }
+
   /// Random hex id for this install. Stored once and reused for the
   /// life of the app install -- reinstalling the app generates a new
   /// one (there's no stable hardware id used here on purpose, since
@@ -86,4 +104,10 @@ class DeviceClaimResult {
   final bool allowed;
   final String? existingDeviceLabel;
   DeviceClaimResult({required this.allowed, this.existingDeviceLabel});
+}
+
+class PendingDeviceBlock {
+  final String label;
+  final bool viaGoogle;
+  PendingDeviceBlock({required this.label, required this.viaGoogle});
 }

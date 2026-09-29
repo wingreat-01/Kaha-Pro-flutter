@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
@@ -12,6 +13,12 @@ import '../services/device_session_service.dart';
 // login_screen.dart, which carries the same link for staff accounts
 // that never see this screen.
 const _kPrivacyPolicyUrl = 'https://merq.prohubapps.com/privacy.html';
+
+// The *Web* application OAuth client ID from Google Cloud Console
+// (not the Android one) -- google_sign_in needs it as serverClientId
+// so the ID token it returns is one Supabase will accept. The same
+// value goes in Supabase -> Auth -> Providers -> Google.
+const _kGoogleWebClientId = '362048022291-mhqsn2dev18s04vh8fth0d6f5bhqhdt0.apps.googleusercontent.com';
 
 /// First-run screen, shown ahead of LoginScreen whenever there's no
 /// active Supabase Auth session on the device.
@@ -58,11 +65,29 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   // recovery action instead of just a plain error.
   String? _blockedByDeviceLabel;
 
+  // True when the blocked sign-in came from Google, so the force-claim
+  // recovery re-runs Google sign-in instead of using a password.
+  bool _blockedViaGoogle = false;
+
   // Defaults to 'general' ("Raw Materials") -- matches the
   // backward-compatible default on the stores.business_type column,
   // so an owner who doesn't touch this selector still gets a sane
   // label instead of an unset/null value.
   String _businessType = 'general';
+
+  @override
+  void initState() {
+    super.initState();
+    // A sign-in whose device claim was refused signs itself back out,
+    // which lands here on a fresh screen -- restore the "signed in on
+    // another device" state that the previous (disposed) screen
+    // couldn't show.
+    final pending = DeviceSessionService.takePendingBlock();
+    if (pending != null) {
+      _blockedByDeviceLabel = pending.label;
+      _blockedViaGoogle = pending.viaGoogle;
+    }
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -153,6 +178,95 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  /// Runs the native Google account picker and exchanges the resulting
+  /// ID token for a Supabase session. Returns false if the person
+  /// closed the picker (not an error). Mobile only -- google_sign_in's
+  /// ID-token flow isn't reliable on web, so the button is hidden there.
+  Future<bool> _googleToSupabaseSession() async {
+    final googleSignIn = GoogleSignIn(serverClientId: _kGoogleWebClientId);
+    // google_sign_in remembers the last account on the device and
+    // reuses it silently, so the account chooser never shows again
+    // after the first sign-in. Clearing that cached account first
+    // makes the picker appear every time, so a different Google
+    // account can be chosen.
+    try {
+      await googleSignIn.signOut();
+    } catch (_) {}
+    final googleUser = await googleSignIn.signIn();
+    if (googleUser == null) return false;
+    final googleAuth = await googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    if (idToken == null) {
+      throw const AuthException('Google did not return an ID token.');
+    }
+    await Supabase.instance.client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: googleAuth.accessToken,
+    );
+    return true;
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _error = null;
+      _info = null;
+      _blockedByDeviceLabel = null;
+      _blockedViaGoogle = false;
+    });
+
+    final storeName = _storeNameCtrl.text.trim();
+    if (!_isSignIn && storeName.isEmpty) {
+      setState(() => _error = 'Enter a store name first, then continue with Google.');
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final signedIn = await _googleToSupabaseSession();
+      if (!signedIn) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+
+      // Brand-new Google accounts get a store from handle_new_user with
+      // the placeholder name "My Store". In create mode, apply the name
+      // and business type the person just entered. The RPC only renames
+      // a store that still has the placeholder name, so tapping this on
+      // an existing account can't overwrite a real store name.
+      if (!_isSignIn) {
+        try {
+          await Supabase.instance.client.rpc('set_initial_store_details', params: {
+            'p_name': storeName,
+            'p_business_type': _businessType,
+          });
+        } catch (_) {
+          // Non-fatal: the store still exists as "My Store".
+        }
+      }
+
+      final claimed = await _claimThisDevice(viaGoogle: true);
+      if (!claimed) return;
+      // main.dart's auth state stream takes it from here.
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+      return;
+    } catch (e, st) {
+      debugPrint('GOOGLE SIGN-IN ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _error = 'Google sign-in failed: $e';
+        _loading = false;
+      });
+      return;
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
   /// Attempts to claim the single-active-device slot for this login.
   /// Called right after a successful signInWithPassword()/signUp(), so
   /// a real session already exists on this device either way -- if the
@@ -163,20 +277,28 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   /// fall through as a normal successful login). Returns false if it
   /// was refused (caller should return immediately -- _blockedByDeviceLabel
   /// and _loading are already set here).
-  Future<bool> _claimThisDevice({bool force = false}) async {
+  Future<bool> _claimThisDevice({bool force = false, bool viaGoogle = false}) async {
     final result = await DeviceSessionService.claim(
       deviceLabel: _deviceLabel(),
       force: force,
     );
+    debugPrint('DEVICE CLAIM: allowed=${result.allowed} existing=${result.existingDeviceLabel}');
     if (result.allowed) return true;
 
     // Refused -- sign this device's brand-new session back out so it
     // can't quietly keep using the app while showing an error.
+    // Parked BEFORE signOut: main.dart swaps in a new StoreSetupScreen
+    // the moment the session disappears, and its initState reads this.
+    DeviceSessionService.setPendingBlock(
+      label: result.existingDeviceLabel ?? 'another device',
+      viaGoogle: viaGoogle,
+    );
     await Supabase.instance.client.auth.signOut();
     if (!mounted) return false;
     setState(() {
       _loading = false;
       _blockedByDeviceLabel = result.existingDeviceLabel ?? 'another device';
+      _blockedViaGoogle = viaGoogle;
     });
     return false;
   }
@@ -210,8 +332,16 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
     try {
-      await Supabase.instance.client.auth.signInWithPassword(email: email, password: password);
-      await _claimThisDevice(force: true);
+      if (_blockedViaGoogle) {
+        final ok = await _googleToSupabaseSession();
+        if (!ok) {
+          if (mounted) setState(() => _loading = false);
+          return;
+        }
+      } else {
+        await Supabase.instance.client.auth.signInWithPassword(email: email, password: password);
+      }
+      await _claimThisDevice(force: true, viaGoogle: _blockedViaGoogle);
       if (!mounted) return;
       setState(() {
         _blockedByDeviceLabel = null;
@@ -351,6 +481,34 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                           : Text(_isSignIn ? 'Sign in' : 'Create store'),
                     ),
                   ),
+                  if (!kIsWeb) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: AppColors.slateBorder)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text('or', style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+                        ),
+                        Expanded(child: Divider(color: AppColors.slateBorder)),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: _loading ? null : _signInWithGoogle,
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: AppColors.slateBorder),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text(
+                          'Continue with Google',
+                          style: AppTextStyles.body(size: 14, weight: FontWeight.w600, color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: _loading ? null : _toggleMode,

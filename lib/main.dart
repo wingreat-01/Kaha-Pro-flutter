@@ -165,11 +165,19 @@ class _KahaproAppState extends State<KahaproApp> with WidgetsBindingObserver {
     // RLS scopes staff_users to the signed-in owner's store already
     // (same assumption verify_staff_login's current_store_id() lookup
     // relies on), so this is just "does any row come back at all."
-    final rows = await Supabase.instance.client
-        .from('staff_users')
-        .select('id')
-        .limit(1);
-    return (rows as List).isNotEmpty;
+    // Timeout so a hung request becomes a visible error (with Retry /
+    // Sign out) instead of an endless spinner.
+    try {
+      final rows = await Supabase.instance.client
+          .from('staff_users')
+          .select('id')
+          .limit(1)
+          .timeout(const Duration(seconds: 15));
+      return (rows as List).isNotEmpty;
+    } catch (e, st) {
+      debugPrint('STAFF CHECK ERROR: $e\n$st');
+      rethrow;
+    }
   }
 
   @override
@@ -240,10 +248,17 @@ class _KahaproAppState extends State<KahaproApp> with WidgetsBindingObserver {
                         return const _RouteLoadingScreen();
                       }
                       if (staffSnap.hasError) {
-                        // Fails safe to the loading view rather than a
-                        // silent blank screen — a transient network blip
-                        // here shouldn't strand someone on first run.
-                        return const _RouteLoadingScreen();
+                        // Previously this showed the spinner forever,
+                        // which hid the real failure. Show it instead,
+                        // with a way to retry or sign out of the store.
+                        return _RouteErrorScreen(
+                          message: '${staffSnap.error}',
+                          onRetry: () => setState(() => _staffCheckToken++),
+                          onSignOut: () async {
+                            await Supabase.instance.client.auth.signOut();
+                            if (mounted) setState(() => _loggedInUser = null);
+                          },
+                        );
                       }
                       if (staffSnap.data == false) {
                         return AddSelfAsStaffScreen(
@@ -269,6 +284,42 @@ class _RouteLoadingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+class _RouteErrorScreen extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  final VoidCallback onSignOut;
+  const _RouteErrorScreen({
+    required this.message,
+    required this.onRetry,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Couldn't load your store",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              FilledButton(onPressed: onRetry, child: const Text('Retry')),
+              TextButton(onPressed: onSignOut, child: const Text('Sign out of store')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
