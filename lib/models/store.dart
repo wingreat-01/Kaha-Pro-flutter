@@ -44,6 +44,13 @@ class Store {
   final String? tin; // BIR Tax Identification Number
   final String? contactNumber;
   final String? permitNumber; // Business Permit / OR / ATP number
+  // QR ordering payment options (026_qr_order_payments.sql). Counter
+  // defaults on, online off until the owner uploads a payment QR and
+  // switches it on in Settings -> QR Order Payments.
+  final bool qrPayCounterEnabled;
+  final bool qrPayOnlineEnabled;
+  final String? onlinePaymentQrUrl; // public Storage URL of the store's own GCash/Maya/bank QR
+  final String? onlinePaymentInstructions;
 
   const Store({
     required this.id,
@@ -60,6 +67,10 @@ class Store {
     this.tin,
     this.contactNumber,
     this.permitNumber,
+    this.qrPayCounterEnabled = true,
+    this.qrPayOnlineEnabled = false,
+    this.onlinePaymentQrUrl,
+    this.onlinePaymentInstructions,
   });
 
   factory Store.fromRow(Map<String, dynamic> row) {
@@ -80,6 +91,10 @@ class Store {
       tin: row['tin'] as String?,
       contactNumber: row['contact_number'] as String?,
       permitNumber: row['permit_number'] as String?,
+      qrPayCounterEnabled: row['qr_pay_counter_enabled'] as bool? ?? true,
+      qrPayOnlineEnabled: row['qr_pay_online_enabled'] as bool? ?? false,
+      onlinePaymentQrUrl: row['online_payment_qr_url'] as String?,
+      onlinePaymentInstructions: row['online_payment_instructions'] as String?,
     );
   }
 
@@ -108,6 +123,12 @@ class Store {
     int? aiCreditsRemaining,
     bool? seniorPwdDiscountEnabled,
     bool? receiptPrintingEnabled,
+    bool? qrPayCounterEnabled,
+    bool? qrPayOnlineEnabled,
+    String? onlinePaymentQrUrl,
+    String? onlinePaymentInstructions,
+    bool clearOnlinePaymentQrUrl = false,
+    bool clearOnlinePaymentInstructions = false,
     bool clearAddress = false,
     bool clearReceiptFooter = false,
     bool clearTin = false,
@@ -129,6 +150,13 @@ class Store {
         tin: clearTin ? null : (tin ?? this.tin),
         contactNumber: clearContactNumber ? null : (contactNumber ?? this.contactNumber),
         permitNumber: clearPermitNumber ? null : (permitNumber ?? this.permitNumber),
+        qrPayCounterEnabled: qrPayCounterEnabled ?? this.qrPayCounterEnabled,
+        qrPayOnlineEnabled: qrPayOnlineEnabled ?? this.qrPayOnlineEnabled,
+        onlinePaymentQrUrl:
+            clearOnlinePaymentQrUrl ? null : (onlinePaymentQrUrl ?? this.onlinePaymentQrUrl),
+        onlinePaymentInstructions: clearOnlinePaymentInstructions
+            ? null
+            : (onlinePaymentInstructions ?? this.onlinePaymentInstructions),
       );
 
   /// True when the trial-expired banner/lock should show. Two paths:

@@ -10,14 +10,16 @@ import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
 import 'reports_screen.dart';
 import 'settings_panel.dart';
+import 'incoming_orders_panel.dart';
 import 'ai_assistant_screen.dart';
 import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../state/recipe_provider.dart';
 import '../state/store_provider.dart';
+import '../state/incoming_order_provider.dart';
 
-enum _Section { register, transactions, reports, assistant, settings }
+enum _Section { register, incoming, transactions, reports, assistant, settings }
 
 /// App shell — owns top-level navigation between the Register (product
 /// grid + cart), Transactions history, and Settings (Users, Categories,
@@ -55,6 +57,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   _Section _section = _Section.register;
+  IncomingOrderProvider? _incomingOrders;
 
   late final StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   bool _syncingFromConnectivity = false;
@@ -66,11 +69,22 @@ class _HomeShellState extends State<HomeShell> {
     super.initState();
     _connectivitySubscription =
         Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
+    // Customer QR orders arrive live for the whole logged-in session,
+    // whichever section is open -- the header icon's badge is how a
+    // cashier notices one while on the Register.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _incomingOrders = context.read<IncomingOrderProvider>();
+      _incomingOrders!.start();
+    });
   }
 
   @override
   void dispose() {
     _connectivitySubscription.cancel();
+    // Captured in initState's post-frame callback: context lookups aren't
+    // safe once the element is being torn down.
+    _incomingOrders?.stop();
     super.dispose();
   }
 
@@ -117,6 +131,8 @@ class _HomeShellState extends State<HomeShell> {
     switch (_section) {
       case _Section.register:
         return RegisterScreen(cashierName: widget.user.name);
+      case _Section.incoming:
+        return IncomingOrdersPanel(cashierName: widget.user.name);
       case _Section.transactions:
         return const TransactionsPanel();
       case _Section.reports:
@@ -275,6 +291,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pendingCount = context.watch<TransactionProvider>().pendingCount;
+    final incomingCount = context.watch<IncomingOrderProvider>().pendingCount;
 
     // Trial/plan urgency — shown as a plain dot on the Settings icon
     // rather than the full "Free trial · N days left" text anywhere
@@ -345,6 +362,15 @@ class _HomeShellState extends State<HomeShell> {
             tooltip: 'Register',
             isActive: _section == _Section.register,
             onTap: () => setState(() => _section = _Section.register),
+          ),
+          _headerIcon(
+            icon: Icons.room_service_outlined,
+            tooltip: incomingCount > 0
+                ? 'Incoming orders ($incomingCount new)'
+                : 'Incoming orders',
+            isActive: _section == _Section.incoming,
+            onTap: () => setState(() => _section = _Section.incoming),
+            badgeCount: incomingCount,
           ),
           _headerIcon(
             icon: Icons.receipt_long_outlined,

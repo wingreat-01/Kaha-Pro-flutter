@@ -12,6 +12,7 @@ import 'inventory_panel.dart';
 import 'users_panel.dart';
 import 'tables_panel.dart';
 import 'qr_menu_panel.dart';
+import 'qr_payments_panel.dart';
 import 'categories_panel.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
@@ -124,6 +125,14 @@ class SettingsPanel extends StatelessWidget {
           subtitle: 'Choose which products show on the ordering page',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const QrMenuPanel()),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'QR Order Payments',
+          subtitle: 'Pay at counter or online (GCash, Maya, bank QR)',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const QrPaymentsPanel()),
           ),
         ),
         _SettingsRow(

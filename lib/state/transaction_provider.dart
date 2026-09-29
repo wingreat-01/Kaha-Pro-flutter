@@ -229,7 +229,10 @@ class TransactionProvider extends ChangeNotifier {
   /// retry won't fix), this rethrows and the caller must NOT proceed
   /// as if the sale succeeded.
   Future<Transaction> record({
-    required List<CartItem> cartItems,
+    List<CartItem> cartItems = const [],
+    // Pre-built sale lines (used when completing a QR order, which carries
+    // its own snapshot prices). Takes priority over [cartItems].
+    List<TransactionLineItem>? lineItems,
     required double total,
     required double cashTendered,
     required double change,
@@ -242,7 +245,7 @@ class TransactionProvider extends ChangeNotifier {
     double discountAmount = 0,
     double vatExemptAmount = 0,
   }) async {
-    final lineItems = cartItems.map(TransactionLineItem.fromCartItem).toList();
+    final sold = lineItems ?? cartItems.map(TransactionLineItem.fromCartItem).toList();
 
     try {
       final row = await _client.rpc('record_transaction', params: {
@@ -250,7 +253,7 @@ class TransactionProvider extends ChangeNotifier {
         'p_cash_tendered': cashTendered,
         'p_change_amount': change,
         'p_cashier_name': cashierName,
-        'p_items': _itemsJson(lineItems),
+        'p_items': _itemsJson(sold),
         'p_payment_method_id': paymentMethodId,
         'p_discount_type': discountType,
         'p_discount_holder_name': discountHolderName,
@@ -264,7 +267,7 @@ class TransactionProvider extends ChangeNotifier {
         cashierName: row['cashier_name'] as String?,
         transactionNumber: '#${(row['transaction_number'] as int).toString().padLeft(5, '0')}',
         timestamp: DateTime.parse(row['created_at'] as String).toLocal(),
-        items: lineItems,
+        items: sold,
         total: total,
         cashTendered: cashTendered,
         change: change,
@@ -288,7 +291,7 @@ class TransactionProvider extends ChangeNotifier {
     } catch (e) {
       if (_isLikelyNetworkFailure(e)) {
         return _queueOffline(
-          lineItems: lineItems,
+          lineItems: sold,
           total: total,
           cashTendered: cashTendered,
           change: change,
