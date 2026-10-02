@@ -130,19 +130,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 Icon(Icons.auto_awesome, size: 16, color: AppColors.ledAmber),
                 const SizedBox(width: 8),
                 Text(
-                  'PIA BUSINESS ASSISTANT',
+                  'PIA',
                   style: AppTextStyles.mono(size: 13, weight: FontWeight.w700, letterSpacing: 1),
                 ),
-                const Spacer(),
+                const SizedBox(width: 12),
                 if (creditsLabel != null)
-                  Text(
-                    creditsLabel,
-                    style: AppTextStyles.mono(
-                      size: 11,
-                      weight: FontWeight.w600,
-                      color: (store!.isExpired || store.aiCreditsRemaining == 0)
-                          ? AppColors.ledgerRed
-                          : AppColors.textMuted,
+                  Expanded(
+                    child: Text(
+                      creditsLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: AppTextStyles.mono(
+                        size: 11,
+                        weight: FontWeight.w600,
+                        color: (store!.isExpired || store.aiCreditsRemaining == 0)
+                            ? AppColors.ledgerRed
+                            : AppColors.textMuted,
+                      ),
                     ),
                   ),
               ],

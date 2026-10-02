@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../models/user.dart';
+import '../models/incoming_order.dart';
 import '../widgets/checkout_warmup.dart';
 import '../widgets/transactions_panel.dart';
 import 'register_screen.dart';
@@ -58,6 +59,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   _Section _section = _Section.register;
   IncomingOrderProvider? _incomingOrders;
+  StreamSubscription<List<IncomingOrder>>? _newOrderSub;
 
   late final StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   bool _syncingFromConnectivity = false;
@@ -75,6 +77,8 @@ class _HomeShellState extends State<HomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _incomingOrders = context.read<IncomingOrderProvider>();
+      _newOrderSub?.cancel();
+      _newOrderSub = _incomingOrders!.newOrders.listen(_onNewOrders);
       _incomingOrders!.start();
     });
   }
@@ -82,10 +86,40 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
+    _newOrderSub?.cancel();
     // Captured in initState's post-frame callback: context lookups aren't
     // safe once the element is being torn down.
     _incomingOrders?.stop();
     super.dispose();
+  }
+
+  /// Visible alert for a customer QR order that just arrived. Skipped
+  /// while the cashier is already looking at the Incoming Orders list,
+  /// where the new card appears on its own.
+  void _onNewOrders(List<IncomingOrder> fresh) {
+    if (!mounted || fresh.isEmpty || _section == _Section.incoming) return;
+    final first = fresh.first;
+    final where = first.tableLabel.isNotEmpty ? first.tableLabel : 'a table';
+    final number = first.orderNumber != null ? ' #${first.orderNumber}' : '';
+    final text = fresh.length == 1
+        ? 'New order$number from $where'
+        : '${fresh.length} new orders';
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(text, style: AppTextStyles.body(size: 14)),
+        duration: const Duration(seconds: 10),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'VIEW',
+          onPressed: () {
+            if (!mounted) return;
+            setState(() => _section = _Section.incoming);
+          },
+        ),
+      ),
+    );
   }
 
   /// Fires on any connectivity change (any transport, not specifically

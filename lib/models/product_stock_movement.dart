@@ -10,6 +10,7 @@ class ProductStockMovement {
   final String id;
   final String? productId; // null if the product was deleted since
   final String productName; // snapshot at the time of the change
+  final String? variantName; // snapshot of the size, when the change was for one
   final String unit; // snapshot, e.g. "pc" / "mL"
   final double delta; // positive = added, negative = deducted
   final String reason;
@@ -21,6 +22,7 @@ class ProductStockMovement {
     required this.id,
     this.productId,
     required this.productName,
+    this.variantName,
     required this.unit,
     required this.delta,
     required this.reason,
@@ -34,6 +36,7 @@ class ProductStockMovement {
       id: row['id'] as String,
       productId: row['product_id'] as String?,
       productName: row['product_name'] as String,
+      variantName: row['variant_name'] as String?,
       unit: row['unit'] as String? ?? 'pc',
       delta: (row['delta'] as num).toDouble(),
       reason: row['reason'] as String,

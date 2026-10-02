@@ -29,7 +29,7 @@ class AddProductDialog extends StatefulWidget {
     bool trackStock,
     String unit,
     String? unitLabel,
-    List<({String name, double price})> variants,
+    List<({String name, double price, int? stockQty})> variants,
     List<({String ingredientId, double quantityUsed, String? variantKey})> recipeItems,
   }) onSubmit;
 
@@ -79,7 +79,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   bool _trackStock = false;
   String _unit = 'pc';
   final _unitLabelCtrl = TextEditingController();
-  List<({String name, double price})> _draftVariants = [];
+  List<({String name, double price, int? stockQty})> _draftVariants = [];
   List<({String ingredientId, double quantityUsed, String? variantKey})> _draftRecipeItems = [];
 
   // Deduped, order-preserving copy of widget.existingCategories.
@@ -194,7 +194,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
       trackStock: _trackStock,
       unit: _unit,
       unitLabel: _unit == 'custom' ? _unitLabelCtrl.text.trim() : null,
-      variants: _draftVariants,
+      // Per-size stock only means anything while Track stock is on.
+      variants: _trackStock
+          ? _draftVariants
+          : _draftVariants
+              .map<({String name, double price, int? stockQty})>(
+                  (v) => (name: v.name, price: v.price, stockQty: null))
+              .toList(),
       recipeItems: _draftRecipeItems,
     );
     Navigator.of(context).pop();
@@ -410,6 +416,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
               ProductVariantEditor(
                 productId: widget.editingProduct?.id,
                 initialVariants: widget.editingProduct?.variants ?? const [],
+                trackStock: _trackStock,
                 onDraftVariantsChanged: _isEditing
                     ? null
                     // setState here (not just assignment) so the size

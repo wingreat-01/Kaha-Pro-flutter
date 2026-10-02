@@ -179,6 +179,7 @@ class _InventoryMovementsPanelState extends State<InventoryMovementsPanel>
           id: 'prod-${m.id}',
           date: m.createdAt,
           itemName: m.productName,
+          variantName: _clean(m.variantName),
           quantity: m.delta.abs(),
           unit: _normalizeUnit(m.unit),
           type: m.delta > 0 ? MovementType.receiving : MovementType.withdrawal,

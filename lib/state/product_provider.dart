@@ -468,6 +468,7 @@ class ProductProvider extends ChangeNotifier {
       unitLabel: resolvedUnitLabel,
       costPerUnit: previous.costPerUnit,
       variants: previous.variants,
+      showOnQrMenu: previous.showOnQrMenu,
     );
     notifyListeners();
 
@@ -546,6 +547,7 @@ class ProductProvider extends ChangeNotifier {
     String productId, {
     required String name,
     required double price,
+    int? stockQty, // optional per-size stock; null = shares product stock
   }) async {
     final index = _products.indexWhere((p) => p.id == productId);
     if (index < 0) return '';
@@ -564,6 +566,9 @@ class ProductProvider extends ChangeNotifier {
           'name': trimmedName,
           'price': price,
           'sort_order': nextSortOrder,
+          // Only sent when set, so adding a plain size keeps working
+          // even before the stock_qty column migration has been run.
+          if (stockQty != null) 'stock_qty': stockQty < 0 ? 0 : stockQty,
         })
         .select()
         .single();
@@ -573,16 +578,26 @@ class ProductProvider extends ChangeNotifier {
       variants: [...currentVariants, variant],
     );
     notifyListeners();
+    await _syncProductStockFromVariants(productId);
     return variant.id;
   }
 
   /// Renames and/or repriced an existing size. Optimistic — the size
   /// list in the admin editor updates instantly, rolled back if the
   /// write fails.
+  ///
+  /// [stockQty] sets this size's own stock count; [clearStock] puts it
+  /// back to "shares the product's stock" (null). This is the quiet
+  /// "setup" path used by the product editor — it does not write an
+  /// Inventory Movements entry. Counts changed from the Inventory
+  /// screen go through [setVariantStock] / [adjustVariantStock], which
+  /// do.
   Future<void> updateVariant(
     String variantId, {
     String? name,
     double? price,
+    int? stockQty,
+    bool clearStock = false,
   }) async {
     var productIndex = -1;
     var variantIndex = -1;
@@ -601,7 +616,13 @@ class ProductProvider extends ChangeNotifier {
 
     final previousVariants = _products[productIndex].variants;
     final previous = previousVariants[variantIndex];
-    final updated = previous.copyWith(name: trimmedName, price: price);
+    final clampedStock = (stockQty != null && stockQty < 0) ? 0 : stockQty;
+    final updated = previous.copyWith(
+      name: trimmedName,
+      price: price,
+      stockQty: clampedStock,
+      clearStockQty: clearStock,
+    );
 
     final nextVariants = [...previousVariants];
     nextVariants[variantIndex] = updated;
@@ -612,12 +633,17 @@ class ProductProvider extends ChangeNotifier {
       await _client.from('product_variants').update({
         if (trimmedName != null) 'name': trimmedName,
         if (price != null) 'price': price,
+        if (clearStock || clampedStock != null)
+          'stock_qty': clearStock ? null : clampedStock,
       }).eq('id', variantId);
     } catch (e) {
       final rollback = [...previousVariants];
       _products[productIndex] = _products[productIndex].copyWith(variants: rollback);
       notifyListeners();
       rethrow;
+    }
+    if (clearStock || clampedStock != null) {
+      await _syncProductStockFromVariants(_products[productIndex].id);
     }
   }
 
@@ -653,6 +679,7 @@ class ProductProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+    await _syncProductStockFromVariants(_products[productIndex].id);
   }
 
   /// Uploads a new/replacement photo for an existing product and
@@ -697,6 +724,7 @@ class ProductProvider extends ChangeNotifier {
     String? staffName,
     String? note,
     bool logMovement = true,
+    String? variantName, // for a size that shares the product-level stock
   }) async {
     final index = _products.indexWhere((p) => p.id == id);
     if (index < 0) return;
@@ -705,7 +733,144 @@ class ProductProvider extends ChangeNotifier {
     final next = (current + delta) < 0 ? 0 : current + delta;
     await _writeStock(id, index, next);
     if (logMovement) {
-      await _logMovement(product, next - current, reason: reason, staffName: staffName, note: note);
+      await _logMovement(product, next - current,
+          reason: reason, staffName: staffName, note: note, variantName: variantName);
+    }
+  }
+
+  /// Per-size counterpart of [adjustStock]. Moves the size's own
+  /// count; if that size has no count of its own (stockQty == null) it
+  /// falls back to the product-level stock, same as a sale would.
+  Future<void> adjustVariantStock(
+    String productId,
+    String variantId,
+    int delta, {
+    String reason = 'Manual adjustment',
+    String? staffName,
+    String? note,
+    bool logMovement = true,
+  }) async {
+    final product = _productById(productId);
+    final variant = _variantById(productId, variantId);
+    if (product == null || variant == null) return;
+
+    final current = variant.stockQty;
+    if (current == null) {
+      await adjustStock(productId, delta,
+          reason: reason,
+          staffName: staffName,
+          note: note,
+          logMovement: logMovement,
+          variantName: variant.name);
+      return;
+    }
+
+    final next = (current + delta) < 0 ? 0 : current + delta;
+    await _writeVariantStock(productId, variantId, next);
+    if (logMovement) {
+      await _logMovement(product, next - current,
+          reason: reason, staffName: staffName, note: note, variantName: variant.name);
+    }
+  }
+
+  /// Per-size counterpart of [setStock] (Inventory's stock dialog).
+  /// Logged as the difference from the previous count. Also turns on
+  /// separate tracking for a size that didn't have a count yet.
+  Future<void> setVariantStock(
+    String productId,
+    String variantId,
+    int quantity, {
+    String? staffName,
+  }) async {
+    final product = _productById(productId);
+    final variant = _variantById(productId, variantId);
+    if (product == null || variant == null) return;
+
+    final next = quantity < 0 ? 0 : quantity;
+    final before = variant.stockQty ?? 0;
+    await _writeVariantStock(productId, variantId, next);
+    await _logMovement(product, next - before,
+        reason: 'Stock count', staffName: staffName, variantName: variant.name);
+  }
+
+  Product? _productById(String productId) {
+    for (final p in _products) {
+      if (p.id == productId) return p;
+    }
+    return null;
+  }
+
+  /// Looks the size up in the live catalog (not in a cart/receipt
+  /// snapshot, whose copy of the size can be stale by the time the
+  /// sale is deducted).
+  ProductVariant? _variantById(String productId, String? variantId) {
+    if (variantId == null || variantId.isEmpty) return null;
+    final product = _productById(productId);
+    if (product == null) return null;
+    for (final v in product.variants) {
+      if (v.id == variantId) return v;
+    }
+    return null;
+  }
+
+  Future<void> _writeVariantStock(String productId, String variantId, int next) async {
+    final previous = _variantById(productId, variantId)?.stockQty;
+    if (!_patchVariant(productId, variantId, (v) => v.copyWith(stockQty: next))) return;
+    notifyListeners();
+
+    try {
+      await _client.from('product_variants').update({'stock_qty': next}).eq('id', variantId);
+    } catch (e) {
+      _patchVariant(
+        productId,
+        variantId,
+        (v) => v.copyWith(stockQty: previous, clearStockQty: previous == null),
+      );
+      notifyListeners();
+      rethrow;
+    }
+    await _syncProductStockFromVariants(productId);
+  }
+
+  bool _patchVariant(
+    String productId,
+    String variantId,
+    ProductVariant Function(ProductVariant v) change,
+  ) {
+    final pi = _products.indexWhere((p) => p.id == productId);
+    if (pi < 0) return false;
+    final current = _products[pi].variants;
+    final vi = current.indexWhere((v) => v.id == variantId);
+    if (vi < 0) return false;
+    final next = [...current];
+    next[vi] = change(current[vi]);
+    _products[pi] = _products[pi].copyWith(variants: next);
+    return true;
+  }
+
+  /// When EVERY size has its own count, the product-level stock_qty
+  /// column is kept equal to their sum. Nothing in the app reads it in
+  /// that mode, but it keeps server-side logic that only knows about
+  /// products.stock_qty (e.g. the QR menu hiding sold-out items)
+  /// working. Best-effort: a failure here never undoes the real stock
+  /// change. Not touched while any size still shares the product
+  /// count, since then stock_qty is that shared pool.
+  Future<void> _syncProductStockFromVariants(String productId) async {
+    final product = _productById(productId);
+    if (product == null) return;
+    if (product.variants.isEmpty || product.variants.any((v) => v.stockQty == null)) return;
+    final sum = product.variants.fold<int>(0, (total, v) => total + v.stockQty!);
+    if (sum == product.stockQty) return;
+
+    try {
+      await _client.from('products').update({'stock_qty': sum}).eq('id', productId);
+      final index = _products.indexWhere((p) => p.id == productId);
+      if (index >= 0) {
+        _products[index] = _products[index].copyWith(stockQty: sum);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('_syncProductStockFromVariants: could not mirror total for $productId: $e');
     }
   }
 
@@ -731,12 +896,14 @@ class ProductProvider extends ChangeNotifier {
     required String reason,
     String? staffName,
     String? note,
+    String? variantName,
   }) async {
     if (delta == 0) return;
     try {
       await _client.from('product_stock_movements').insert({
         'product_id': product.id,
         'product_name': product.name,
+        if (variantName != null) 'variant_name': variantName,
         'unit': product.unitDisplay,
         'delta': delta,
         'reason': reason,
@@ -812,7 +979,17 @@ class ProductProvider extends ChangeNotifier {
   Future<void> deductStockForSale(List<CartItem> soldItems) async {
     for (final item in soldItems) {
       if (!item.product.trackStock) continue;
-      await adjustStock(item.product.id, -item.quantity, logMovement: false);
+      // A size with its own count is deducted from that count; every
+      // other sale (no size, or a size that shares the product's
+      // stock) comes out of the product-level count as before. The
+      // size is re-read from the live catalog since the cart's copy
+      // can be stale.
+      final live = _variantById(item.product.id, item.selectedVariant?.id);
+      if (live != null && live.stockQty != null) {
+        await adjustVariantStock(item.product.id, live.id, -item.quantity, logMovement: false);
+      } else {
+        await adjustStock(item.product.id, -item.quantity, logMovement: false);
+      }
     }
   }
 
@@ -827,7 +1004,12 @@ class ProductProvider extends ChangeNotifier {
       if (item.productId.isEmpty) continue; // product was deleted before this synced
       final matches = _products.where((p) => p.id == item.productId);
       if (matches.isEmpty || !matches.first.trackStock) continue;
-      await adjustStock(item.productId, -item.quantity, logMovement: false);
+      final live = _variantById(item.productId, item.variantId);
+      if (live != null && live.stockQty != null) {
+        await adjustVariantStock(item.productId, live.id, -item.quantity, logMovement: false);
+      } else {
+        await adjustStock(item.productId, -item.quantity, logMovement: false);
+      }
     }
   }
 

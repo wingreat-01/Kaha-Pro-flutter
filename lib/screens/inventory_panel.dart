@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
+import '../models/product_variant.dart';
 import '../state/currency_provider.dart';
 import '../state/product_provider.dart';
 import '../theme/app_theme.dart';
@@ -160,7 +161,7 @@ class _ValuationSummary extends StatelessWidget {
     var missing = 0;
     for (final p in products) {
       if (p.costPerUnit != null) {
-        total += p.costPerUnit! * p.stockQty;
+        total += p.costPerUnit! * p.totalStock;
         costed++;
       } else {
         missing++;
@@ -208,7 +209,12 @@ class _InventoryRow extends StatelessWidget {
 
   const _InventoryRow({required this.product, required this.catalog, this.staffName});
 
+  /// Product-level dialog: threshold + cost always; the stock count
+  /// only when the product-level count is actually in play (no per-size
+  /// counts, or some sizes share it). When every size has its own
+  /// count, those are edited from the size rows below instead.
   void _openStockDialog(BuildContext context) {
+    final showQty = product.usesSharedStock;
     final qtyCtrl = TextEditingController(text: product.stockQty.toString());
     final thresholdCtrl = TextEditingController(text: product.lowStockThreshold.toString());
     final costCtrl = TextEditingController(
@@ -230,16 +236,21 @@ class _InventoryRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Current stock', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: qtyCtrl,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              style: AppTextStyles.body(size: 14),
-              decoration: const InputDecoration(hintText: 'e.g. 24'),
-            ),
-            const SizedBox(height: 16),
+            if (showQty) ...[
+              Text(
+                product.hasVariantStock ? 'Shared stock (sizes without their own count)' : 'Current stock',
+                style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: qtyCtrl,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                style: AppTextStyles.body(size: 14),
+                decoration: const InputDecoration(hintText: 'e.g. 24'),
+              ),
+              const SizedBox(height: 16),
+            ],
             Text('Low-stock alert at', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
             const SizedBox(height: 6),
             TextField(
@@ -277,7 +288,7 @@ class _InventoryRow extends StatelessWidget {
               final costText = costCtrl.text.trim();
               final cost = costText.isEmpty ? null : double.tryParse(costText);
               final costChanged = (costText.isEmpty || cost != null) && cost != product.costPerUnit;
-              if (qty != null) catalog.setStock(product.id, qty, staffName: staffName);
+              if (showQty && qty != null) catalog.setStock(product.id, qty, staffName: staffName);
               if (threshold != null) catalog.setLowStockThreshold(product.id, threshold);
               Navigator.of(context).pop();
               if (costChanged) {
@@ -297,9 +308,59 @@ class _InventoryRow extends StatelessWidget {
     );
   }
 
+  /// Exact-count dialog for one size.
+  void _openVariantStockDialog(BuildContext context, ProductVariant variant) {
+    final qtyCtrl = TextEditingController(text: (variant.stockQty ?? 0).toString());
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.slate,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text(
+          '${product.name} · ${variant.name}',
+          style: AppTextStyles.body(size: 15, weight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Current stock', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: qtyCtrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: AppTextStyles.body(size: 14),
+              decoration: const InputDecoration(hintText: 'e.g. 24'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              final qty = int.tryParse(qtyCtrl.text.trim());
+              if (qty != null) {
+                catalog.setVariantStock(product.id, variant.id, qty, staffName: staffName);
+              }
+              Navigator.of(context).pop();
+            },
+            child: Text('Save', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.tillGreen)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isLow = product.isLowStock;
+    final perSize = product.hasVariantStock;
+    final sharedSizes = product.variants.where((v) => v.stockQty == null).toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -312,71 +373,192 @@ class _InventoryRow extends StatelessWidget {
           width: 1,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: InkWell(
-              onTap: () => _openStockDialog(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(product.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Row(
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _openStockDialog(context),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${product.stockQty} in stock',
-                        style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+                      Text(product.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            perSize
+                                ? '${product.totalStock} in stock · all sizes'
+                                : '${product.stockQty} in stock',
+                            style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+                          ),
+                          if (isLow) ...[
+                            const SizedBox(width: 8),
+                            const _LowBadge(),
+                          ],
+                        ],
                       ),
-                      if (isLow) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.ledgerRed.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'LOW',
-                            style: AppTextStyles.mono(
-                              size: 10,
-                              weight: FontWeight.w700,
-                              color: AppColors.ledgerRed,
-                              letterSpacing: 1,
-                            ),
-                          ),
+                      const SizedBox(height: 2),
+                      Text(
+                        product.costPerUnit != null
+                            ? '${context.moneyPrefix}${_trimZeros(product.costPerUnit!)} / ${product.unitDisplay}'
+                            : 'Cost not set',
+                        style: AppTextStyles.body(
+                          size: 11.5,
+                          color: product.costPerUnit != null ? AppColors.textMuted : AppColors.ledgerRed,
                         ),
-                      ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    product.costPerUnit != null
-                        ? '${context.moneyPrefix}${_trimZeros(product.costPerUnit!)} / ${product.unitDisplay}'
-                        : 'Cost not set',
-                    style: AppTextStyles.body(
-                      size: 11.5,
-                      color: product.costPerUnit != null ? AppColors.textMuted : AppColors.ledgerRed,
+                ),
+              ),
+              // With per-size counts the +/- controls live on each size
+              // row below, so a product-level +/- would be ambiguous.
+              if (!perSize) ...[
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  color: AppColors.textSecondary,
+                  tooltip: 'Decrease stock',
+                  onPressed: product.stockQty <= 0 ? null : () => catalog.adjustStock(product.id, -1, staffName: staffName),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  color: AppColors.tillGreen,
+                  tooltip: 'Increase stock',
+                  onPressed: () => catalog.adjustStock(product.id, 1, staffName: staffName),
+                ),
+              ],
+            ],
+          ),
+          if (perSize) ...[
+            const SizedBox(height: 6),
+            Divider(height: 1, color: AppColors.slateBorder),
+            for (final variant in product.variants)
+              if (variant.stockQty != null)
+                _StockLine(
+                  label: variant.name,
+                  qty: variant.stockQty!,
+                  isLow: variant.stockQty! <= product.lowStockThreshold,
+                  onTap: () => _openVariantStockDialog(context, variant),
+                  onMinus: variant.stockQty! <= 0
+                      ? null
+                      : () => catalog.adjustVariantStock(product.id, variant.id, -1, staffName: staffName),
+                  onPlus: () => catalog.adjustVariantStock(product.id, variant.id, 1, staffName: staffName),
+                ),
+            // Sizes with no count of their own draw from the product's
+            // shared stock — shown as one line so nothing is hidden.
+            if (sharedSizes.isNotEmpty)
+              _StockLine(
+                label: 'Shared: ${sharedSizes.map((v) => v.name).join(', ')}',
+                qty: product.stockQty,
+                isLow: product.stockQty <= product.lowStockThreshold,
+                onTap: () => _openStockDialog(context),
+                onMinus: product.stockQty <= 0
+                    ? null
+                    : () => catalog.adjustStock(product.id, -1, staffName: staffName),
+                onPlus: () => catalog.adjustStock(product.id, 1, staffName: staffName),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LowBadge extends StatelessWidget {
+  const _LowBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.ledgerRed.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'LOW',
+        style: AppTextStyles.mono(
+          size: 10,
+          weight: FontWeight.w700,
+          color: AppColors.ledgerRed,
+          letterSpacing: 1,
+        ),
+      ),
+    );
+  }
+}
+
+/// One size's (or the shared pool's) line under a product that tracks
+/// stock per size: label + count + LOW badge, tap to set an exact
+/// count, +/- to nudge by one.
+class _StockLine extends StatelessWidget {
+  final String label;
+  final int qty;
+  final bool isLow;
+  final VoidCallback onTap;
+  final VoidCallback? onMinus;
+  final VoidCallback onPlus;
+
+  const _StockLine({
+    required this.label,
+    required this.qty,
+    required this.isLow,
+    required this.onTap,
+    required this.onMinus,
+    required this.onPlus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.body(size: 13, weight: FontWeight.w600),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '$qty in stock',
+                    style: AppTextStyles.body(
+                      size: 12,
+                      color: isLow ? AppColors.ledgerRed : AppColors.textSecondary,
+                    ),
+                  ),
+                  if (isLow) ...[
+                    const SizedBox(width: 8),
+                    const _LowBadge(),
+                  ],
                 ],
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.remove_circle_outline, size: 20),
-            color: AppColors.textSecondary,
-            tooltip: 'Decrease stock',
-            onPressed: product.stockQty <= 0 ? null : () => catalog.adjustStock(product.id, -1, staffName: staffName),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, size: 20),
-            color: AppColors.tillGreen,
-            tooltip: 'Increase stock',
-            onPressed: () => catalog.adjustStock(product.id, 1, staffName: staffName),
-          ),
-        ],
-      ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline, size: 20),
+          color: AppColors.textSecondary,
+          tooltip: 'Decrease stock',
+          onPressed: onMinus,
+        ),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline, size: 20),
+          color: AppColors.tillGreen,
+          tooltip: 'Increase stock',
+          onPressed: onPlus,
+        ),
+      ],
     );
   }
 }
@@ -414,6 +596,7 @@ class _WithdrawDialog extends StatefulWidget {
 
 class _WithdrawDialogState extends State<_WithdrawDialog> {
   Product? _selected;
+  ProductVariant? _selectedVariant; // only for products with per-size counts
   final _qtyCtrl = TextEditingController();
   final _otherReasonCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
@@ -439,8 +622,14 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
       setState(() => _error = 'Enter a whole number greater than 0.');
       return;
     }
-    if (qty > product.stockQty) {
-      setState(() => _error = 'Only ${product.stockQty} ${product.unitDisplay} in stock.');
+    final variant = _selectedVariant;
+    if (product.hasVariantStock && variant == null) {
+      setState(() => _error = 'Select a size.');
+      return;
+    }
+    final available = product.stockFor(variant);
+    if (qty > available) {
+      setState(() => _error = 'Only $available ${product.unitDisplay} in stock.');
       return;
     }
     if (_reason == null) {
@@ -459,13 +648,26 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
     Navigator.of(context).pop();
 
     try {
-      await widget.provider.adjustStock(
-        product.id,
-        -qty,
-        reason: reason,
-        note: note,
-        staffName: widget.staffName,
-      );
+      if (variant != null) {
+        // Moves the size's own count, or the shared count when that
+        // size doesn't have one — and logs the size either way.
+        await widget.provider.adjustVariantStock(
+          product.id,
+          variant.id,
+          -qty,
+          reason: reason,
+          note: note,
+          staffName: widget.staffName,
+        );
+      } else {
+        await widget.provider.adjustStock(
+          product.id,
+          -qty,
+          reason: reason,
+          note: note,
+          staffName: widget.staffName,
+        );
+      }
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not withdraw stock — check your connection and try again.')),
@@ -508,6 +710,7 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
                 },
                 onSelected: (p) => setState(() {
                   _selected = p;
+                  _selectedVariant = null;
                   _error = null;
                 }),
                 fieldViewBuilder: (context, controller, focusNode, onSubmit) {
@@ -521,7 +724,12 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
                     // so the withdrawal can't go to a product that no
                     // longer matches what the field says.
                     onChanged: (_) {
-                      if (_selected != null) setState(() => _selected = null);
+                      if (_selected != null) {
+                        setState(() {
+                          _selected = null;
+                          _selectedVariant = null;
+                        });
+                      }
                     },
                   );
                 },
@@ -544,7 +752,7 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 child: Text(
-                                  '${option.name} · ${option.stockQty} ${option.unitDisplay}',
+                                  '${option.name} · ${option.totalStock} ${option.unitDisplay}',
                                   style: AppTextStyles.body(size: 13),
                                 ),
                               ),
@@ -556,6 +764,30 @@ class _WithdrawDialogState extends State<_WithdrawDialog> {
                   );
                 },
               ),
+              if (_selected != null && _selected!.hasVariantStock) ...[
+                const SizedBox(height: 14),
+                Text('Size', style: AppTextStyles.body(size: 12, color: AppColors.textSecondary)),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<ProductVariant>(
+                  value: _selectedVariant,
+                  dropdownColor: AppColors.slate,
+                  style: AppTextStyles.body(size: 14),
+                  decoration: const InputDecoration(hintText: 'Select a size'),
+                  items: _selected!.variants
+                      .map((v) => DropdownMenuItem(
+                            value: v,
+                            child: Text(
+                              '${v.name} · ${_selected!.stockFor(v)} ${_selected!.unitDisplay}'
+                              '${v.stockQty == null ? ' (shared)' : ''}',
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (value) => setState(() {
+                    _selectedVariant = value;
+                    _error = null;
+                  }),
+                ),
+              ],
               const SizedBox(height: 14),
               Text(
                 _selected != null

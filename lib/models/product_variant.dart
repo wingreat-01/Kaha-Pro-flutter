@@ -12,13 +12,23 @@ class ProductVariant {
   final double price;
   final int sortOrder;
 
+  /// Optional per-size stock count. null (the default, and what every
+  /// size had before this field existed) means "this size has no count
+  /// of its own" — sales of it come out of the product's shared
+  /// [Product.stockQty], exactly as before. A number means this size is
+  /// tracked separately: sales and manual adjustments move this count.
+  final int? stockQty;
+
   const ProductVariant({
     required this.id,
     required this.productId,
     required this.name,
     required this.price,
     this.sortOrder = 0,
+    this.stockQty,
   });
+
+  bool get hasOwnStock => stockQty != null;
 
   factory ProductVariant.fromRow(Map<String, dynamic> row) {
     return ProductVariant(
@@ -27,6 +37,7 @@ class ProductVariant {
       name: row['name'] as String,
       price: (row['price'] as num).toDouble(),
       sortOrder: row['sort_order'] as int? ?? 0,
+      stockQty: (row['stock_qty'] as num?)?.toInt(),
     );
   }
 
@@ -34,6 +45,8 @@ class ProductVariant {
     String? name,
     double? price,
     int? sortOrder,
+    int? stockQty,
+    bool clearStockQty = false, // true = back to "shares product stock"
   }) {
     return ProductVariant(
       id: id,
@@ -41,6 +54,7 @@ class ProductVariant {
       name: name ?? this.name,
       price: price ?? this.price,
       sortOrder: sortOrder ?? this.sortOrder,
+      stockQty: clearStockQty ? null : (stockQty ?? this.stockQty),
     );
   }
 }

@@ -308,7 +308,7 @@ class _CategoryProductsView extends StatelessWidget {
                                   Text(p.name, style: AppTextStyles.body(size: 14, weight: FontWeight.w600)),
                                   const SizedBox(height: 4),
                                   Text(
-                                    p.isLowStock ? 'Stock: ${p.stockQty} • LOW' : 'Stock: ${p.stockQty}',
+                                    p.isLowStock ? 'Stock: ${p.totalStock} • LOW' : 'Stock: ${p.totalStock}',
                                     style: AppTextStyles.body(
                                       size: 12,
                                       color: p.isLowStock ? AppColors.ledgerRed : AppColors.textSecondary,

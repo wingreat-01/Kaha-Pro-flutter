@@ -146,7 +146,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
             final savedVariantIds = <String>[];
             for (final v in variants) {
               try {
-                final variantId = await catalog.addVariant(newId, name: v.name, price: v.price);
+                final variantId = await catalog.addVariant(
+                  newId,
+                  name: v.name,
+                  price: v.price,
+                  stockQty: v.stockQty,
+                );
                 savedVariantIds.add(variantId);
               } catch (e) {
                 savedVariantIds.add('');

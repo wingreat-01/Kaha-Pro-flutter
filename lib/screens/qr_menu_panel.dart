@@ -93,7 +93,7 @@ class _QrMenuRowState extends State<_QrMenuRow> {
     // Tracked-stock items that are actually sold out still get hidden
     // from the QR menu server-side (see get_menu_for_qr) even with
     // this switch on — untracked items like meals have no such gate.
-    final soldOut = product.trackStock && product.stockQty <= 0;
+    final soldOut = product.isSoldOut;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

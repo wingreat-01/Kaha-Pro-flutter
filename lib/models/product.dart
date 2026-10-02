@@ -80,7 +80,47 @@ class Product {
     this.showOnQrMenu = true,
   });
 
-  bool get isLowStock => stockQty <= lowStockThreshold;
+  /// True when at least one size keeps its own stock count (see
+  /// [ProductVariant.stockQty]). False for products without sizes and
+  /// for products whose sizes all share the product-level count — in
+  /// both cases everything behaves exactly as before per-size stock
+  /// existed.
+  bool get hasVariantStock => variants.any((v) => v.stockQty != null);
+
+  /// True when the product-level [stockQty] still matters: either no
+  /// size has its own count, or some sizes don't and draw from it.
+  bool get usesSharedStock =>
+      !hasVariantStock || variants.any((v) => v.stockQty == null);
+
+  /// Everything on hand for this product — the sum of the per-size
+  /// counts plus the shared count when any size still uses it.
+  int get totalStock {
+    if (!hasVariantStock) return stockQty;
+    var total = usesSharedStock ? stockQty : 0;
+    for (final v in variants) {
+      total += v.stockQty ?? 0;
+    }
+    return total;
+  }
+
+  /// Stock that a sale of [variant] (or of the plain product when null)
+  /// would draw from.
+  int stockFor(ProductVariant? variant) => variant?.stockQty ?? stockQty;
+
+  /// Low when the product-level count is at/below the threshold, or —
+  /// for products with per-size counts — when any individually
+  /// tracked size is.
+  bool get isLowStock {
+    if (!hasVariantStock) return stockQty <= lowStockThreshold;
+    for (final v in variants) {
+      final q = v.stockQty;
+      if (q != null && q <= lowStockThreshold) return true;
+    }
+    return usesSharedStock && stockQty <= lowStockThreshold;
+  }
+
+  /// Tracked product with nothing left anywhere (all sizes combined).
+  bool get isSoldOut => trackStock && totalStock <= 0;
 
   /// Human-readable unit label for display — the custom free-text
   /// label when set, otherwise the standard label for `unit`, falling

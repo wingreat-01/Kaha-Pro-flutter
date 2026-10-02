@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/incoming_order.dart';
@@ -18,7 +19,7 @@ import '../models/incoming_order.dart';
 /// RLS scopes `orders` (and its joined tables) to the signed-in owner's
 /// store, so no explicit store_id filter is needed here -- same
 /// assumption as StoreProvider / ProductProvider.
-class IncomingOrderProvider extends ChangeNotifier {
+class IncomingOrderProvider extends ChangeNotifier with WidgetsBindingObserver {
   final SupabaseClient _client = Supabase.instance.client;
 
   RealtimeChannel? _channel;
@@ -27,6 +28,20 @@ class IncomingOrderProvider extends ChangeNotifier {
   Object? loadError;
   bool _hasLoadedOnce = false;
   bool _disposed = false;
+  bool _observing = false;
+  Timer? _pollTimer;
+  int _loadSeq = 0;
+
+  /// Fires with the freshly arrived pending orders (never the ones that
+  /// were already waiting on first load). HomeShell listens to this to
+  /// show an on-screen alert, whichever section the cashier is in.
+  final StreamController<List<IncomingOrder>> _newOrdersController =
+      StreamController<List<IncomingOrder>>.broadcast();
+  Stream<List<IncomingOrder>> get newOrders => _newOrdersController.stream;
+
+  /// Safety-net refresh while signed in, in case realtime events stop
+  /// arriving (dropped websocket, backgrounded tab, table not published).
+  static const Duration _pollEvery = Duration(seconds: 12);
 
   /// orderId -> transaction id, for sales already recorded from an order
   /// during this session. If saving the sale worked but flipping the
@@ -60,9 +75,20 @@ class IncomingOrderProvider extends ChangeNotifier {
 
   /// Safe to call repeatedly (a new HomeShell after every PIN login
   /// calls it again) -- any old subscription is closed first.
+  ///
+  /// A websocket alone isn't reliable on phones or in a background
+  /// browser tab, so the list is kept fresh three ways:
+  ///   1. Realtime events (instant).
+  ///   2. A reload whenever the channel (re)subscribes and whenever the
+  ///      app or browser tab returns to the foreground.
+  ///   3. A light poll as a safety net if events never arrive.
   Future<void> start() async {
     await stop();
+    if (_disposed) return;
+    WidgetsBinding.instance.addObserver(this);
+    _observing = true;
     await load();
+    if (_disposed) return;
     _channel = _client
         .channel('incoming-orders')
         .onPostgresChanges(
@@ -71,10 +97,24 @@ class IncomingOrderProvider extends ChangeNotifier {
           table: 'orders',
           callback: (_) => load(),
         )
-        .subscribe();
+        .subscribe((status, error) {
+      if (_disposed) return;
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        load(); // catch anything missed while (re)connecting
+      } else if (error != null) {
+        debugPrint('IncomingOrderProvider realtime $status: $error');
+      }
+    });
+    _pollTimer = Timer.periodic(_pollEvery, (_) => load());
   }
 
   Future<void> stop() async {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    if (_observing) {
+      WidgetsBinding.instance.removeObserver(this);
+      _observing = false;
+    }
     final channel = _channel;
     _channel = null;
     if (channel != null) {
@@ -84,14 +124,31 @@ class IncomingOrderProvider extends ChangeNotifier {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) load();
+  }
+
+  String _signature(List<IncomingOrder> list) =>
+      list.map((o) => '${o.id}|${o.status}|${o.paymentStatus}|${o.items.length}').join(',');
+
   /// Last two days of orders, newest first. Older ones aren't useful on
   /// a cashier screen and would just grow the list forever.
+  ///
+  /// Called from realtime events, the poll and app resume, so calls can
+  /// overlap: only the newest call's result is applied, and listeners
+  /// are only notified when something actually changed (the poll would
+  /// otherwise rebuild HomeShell every few seconds for nothing).
   Future<void> load() async {
     if (_disposed) return;
+    final seq = ++_loadSeq;
+    final wasLoading = isLoading;
+    final hadError = loadError != null;
     if (!_hasLoadedOnce) {
       isLoading = true;
       notifyListeners();
     }
+    var changed = false;
     try {
       final since = DateTime.now().subtract(const Duration(days: 2)).toUtc().toIso8601String();
       final rows = await _client
@@ -106,25 +163,39 @@ class IncomingOrderProvider extends ChangeNotifier {
           .order('created_at', ascending: false)
           .limit(100);
 
+      if (_disposed || seq != _loadSeq) return; // a newer load superseded this one
+
       final next = (rows as List)
           .map((r) => IncomingOrder.fromRow(Map<String, dynamic>.from(r as Map)))
           .toList();
 
-      final before = pendingCount;
+      changed = _signature(next) != _signature(_orders);
+      final knownIds = _orders.map((o) => o.id).toSet();
       _orders = next;
-      // Audible nudge only for orders that arrive while the app is open,
-      // not for the ones already waiting when it first loads.
-      if (_hasLoadedOnce && pendingCount > before) {
-        SystemSound.play(SystemSoundType.alert);
+      // Alert only for pending orders that arrive while the app is open,
+      // not for the ones already waiting when it first loads. Comparing
+      // ids (not counts) means an accept/reject elsewhere can't mask a
+      // new arrival, and a status change never re-triggers the alert.
+      if (_hasLoadedOnce) {
+        final fresh = next
+            .where((o) => o.status == 'pending' && !knownIds.contains(o.id))
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        if (fresh.isNotEmpty) {
+          SystemSound.play(SystemSoundType.alert);
+          if (!_newOrdersController.isClosed) _newOrdersController.add(fresh);
+        }
       }
       _hasLoadedOnce = true;
       loadError = null;
     } catch (e) {
+      if (_disposed || seq != _loadSeq) return;
       loadError = e;
       debugPrint('IncomingOrderProvider.load failed: $e');
     }
     isLoading = false;
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+    if (changed || wasLoading || hadError || loadError != null) notifyListeners();
   }
 
   /// Accept = the kitchen starts on it.
@@ -164,6 +235,13 @@ class IncomingOrderProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _newOrdersController.close();
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    if (_observing) {
+      WidgetsBinding.instance.removeObserver(this);
+      _observing = false;
+    }
     final channel = _channel;
     _channel = null;
     if (channel != null) {

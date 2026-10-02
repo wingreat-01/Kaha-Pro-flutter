@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../models/product_variant.dart';
+import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Bottom sheet shown when tapping a product tile that has sizes
@@ -74,10 +75,28 @@ class ProductSizePickerSheet extends StatelessWidget {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(variant.name, style: AppTextStyles.body(size: 15, weight: FontWeight.w600)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(variant.name, style: AppTextStyles.body(size: 15, weight: FontWeight.w600)),
+                              // Only for sizes that keep their own count.
+                              // Still tappable at 0 — the register's
+                              // negative-stock policy is "allow".
+                              if (product.trackStock && variant.stockQty != null)
+                                Text(
+                                  variant.stockQty! <= 0 ? 'Out of stock' : '${variant.stockQty} left',
+                                  style: AppTextStyles.body(
+                                    size: 11.5,
+                                    color: variant.stockQty! <= product.lowStockThreshold
+                                        ? AppColors.ledgerRed
+                                        : AppColors.textMuted,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                         Text(
-                          '₱${variant.price.toStringAsFixed(2)}',
+                          context.money(variant.price),
                           style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, color: AppColors.ledAmber),
                         ),
                       ],

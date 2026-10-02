@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/product_variant.dart';
 import '../state/product_provider.dart';
@@ -17,15 +18,22 @@ import '../theme/app_theme.dart';
 ///   and [initialVariants] — every add/rename/reprice/delete writes
 ///   straight through ProductProvider immediately, same as the rest
 ///   of the admin UI (no separate "Save" step for sizes).
+///
+/// When [trackStock] is on (the product's "Track stock" switch), each
+/// size also gets an optional stock quantity field. Left blank, that
+/// size shares the product's stock like before; filled in, it is
+/// tracked on its own.
 class ProductVariantEditor extends StatefulWidget {
   final String? productId;
   final List<ProductVariant> initialVariants;
-  final ValueChanged<List<({String name, double price})>>? onDraftVariantsChanged;
+  final bool trackStock;
+  final ValueChanged<List<({String name, double price, int? stockQty})>>? onDraftVariantsChanged;
 
   const ProductVariantEditor({
     super.key,
     required this.productId,
     this.initialVariants = const [],
+    this.trackStock = false,
     this.onDraftVariantsChanged,
   });
 
@@ -37,18 +45,30 @@ class _DraftRow {
   final ProductVariant? existing; // null = not yet saved to Supabase
   final TextEditingController nameCtrl;
   final TextEditingController priceCtrl;
+  final TextEditingController stockCtrl;
   final FocusNode nameFocus = FocusNode();
   final FocusNode priceFocus = FocusNode();
+  final FocusNode stockFocus = FocusNode();
 
-  _DraftRow({this.existing, required String name, required String price})
+  /// What the stock field held when it was last loaded/saved — a stock
+  /// value is only written back when the text actually differs, so
+  /// saving a rename never overwrites a count that changed elsewhere
+  /// (e.g. a sale) while this dialog was open.
+  String loadedStockText;
+
+  _DraftRow({this.existing, required String name, required String price, String stock = ''})
       : nameCtrl = TextEditingController(text: name),
-        priceCtrl = TextEditingController(text: price);
+        priceCtrl = TextEditingController(text: price),
+        stockCtrl = TextEditingController(text: stock),
+        loadedStockText = stock;
 
   void dispose() {
     nameCtrl.dispose();
     priceCtrl.dispose();
+    stockCtrl.dispose();
     nameFocus.dispose();
     priceFocus.dispose();
+    stockFocus.dispose();
   }
 }
 
@@ -64,7 +84,12 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
     super.initState();
     _hasSizes = widget.initialVariants.isNotEmpty;
     for (final v in widget.initialVariants) {
-      _rows.add(_newRow(existing: v, name: v.name, price: v.price.toStringAsFixed(_decimals)));
+      _rows.add(_newRow(
+        existing: v,
+        name: v.name,
+        price: v.price.toStringAsFixed(_decimals),
+        stock: v.stockQty?.toString() ?? '',
+      ));
     }
   }
 
@@ -82,6 +107,7 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
         .map((r) => (
               name: r.nameCtrl.text.trim(),
               price: double.tryParse(r.priceCtrl.text.trim()) ?? 0,
+              stockQty: widget.trackStock ? int.tryParse(r.stockCtrl.text.trim()) : null,
             ))
         .where((r) => r.name.isNotEmpty && r.price > 0)
         .toList());
@@ -105,10 +131,16 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
 
     row.nameFocus.addListener(() => maybeCommit(row.nameFocus));
     row.priceFocus.addListener(() => maybeCommit(row.priceFocus));
+    row.stockFocus.addListener(() => maybeCommit(row.stockFocus));
   }
 
-  _DraftRow _newRow({ProductVariant? existing, required String name, required String price}) {
-    final row = _DraftRow(existing: existing, name: name, price: price);
+  _DraftRow _newRow({
+    ProductVariant? existing,
+    required String name,
+    required String price,
+    String stock = '',
+  }) {
+    final row = _DraftRow(existing: existing, name: name, price: price, stock: stock);
     _wireRow(row);
     return row;
   }
@@ -152,10 +184,13 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
       return;
     }
 
+    final stockText = row.stockCtrl.text.trim();
+    final stock = widget.trackStock ? int.tryParse(stockText) : null;
+
     final provider = context.read<ProductProvider>();
     try {
       if (row.existing == null) {
-        await provider.addVariant(widget.productId!, name: name, price: price);
+        await provider.addVariant(widget.productId!, name: name, price: price, stockQty: stock);
         final matches = provider.products
             .firstWhere((p) => p.id == widget.productId)
             .variants
@@ -166,11 +201,20 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
               existing: matches.last,
               name: name,
               price: price.toStringAsFixed(_decimals),
+              stock: stock?.toString() ?? '',
             );
           });
         }
       } else {
-        await provider.updateVariant(row.existing!.id, name: name, price: price);
+        final stockChanged = widget.trackStock && stockText != row.loadedStockText;
+        await provider.updateVariant(
+          row.existing!.id,
+          name: name,
+          price: price,
+          stockQty: stockChanged ? stock : null,
+          clearStock: stockChanged && stockText.isEmpty,
+        );
+        row.loadedStockText = stockText;
       }
     } catch (e) {
       if (mounted) {
@@ -213,7 +257,11 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
                       Text('This product has sizes', style: AppTextStyles.body(size: 13.5, weight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(
-                        'e.g. Medium, Large, Grande — each with its own price',
+                        widget.trackStock
+                            ? 'e.g. Small, Medium, Large — each with its own price. '
+                                'Add a stock quantity to track a size on its own; '
+                                'leave it blank to share the product\'s stock.'
+                            : 'e.g. Medium, Large, Grande — each with its own price',
                         style: AppTextStyles.body(size: 11.5, color: AppColors.textMuted),
                       ),
                     ],
@@ -243,7 +291,9 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
             final row = entry.value;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
+              child: Column(
+                children: [
+              Row(
                 children: [
                   Expanded(
                     flex: 3,
@@ -284,6 +334,33 @@ class _ProductVariantEditorState extends State<ProductVariantEditor> {
                       visualDensity: VisualDensity.standard,
                     ),
                   ),
+                ],
+              ),
+                  if (widget.trackStock)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: row.stockCtrl,
+                              focusNode: row.stockFocus,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              style: AppTextStyles.body(size: 14),
+                              decoration: const InputDecoration(
+                                hintText: 'Stock qty (optional)',
+                              ),
+                              onSubmitted: (_) => _commitRow(index),
+                              onEditingComplete: () => _commitRow(index),
+                            ),
+                          ),
+                          // Same width as the delete button above, so the
+                          // stock field lines up with the price field.
+                          const SizedBox(width: 44),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             );
