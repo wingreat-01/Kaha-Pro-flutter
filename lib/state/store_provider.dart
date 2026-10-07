@@ -51,6 +51,11 @@ class StoreProvider extends ChangeNotifier {
   /// see Store.isExpired.
   bool get isExpired => _store?.isExpired ?? false;
 
+  /// Whether this store's plan includes QR Ordering (Basic, Pro, or an
+  /// active trial). False until the store has loaded, so a slow load
+  /// never briefly unlocks the feature. See Store.canUseQrOrdering.
+  bool get canUseQrOrdering => _store?.canUseQrOrdering ?? false;
+
   /// False until the store has loaded, matching every other flag on
   /// this provider — a slow/failed load must never make the discount
   /// option flash into view before the real (likely-off) value

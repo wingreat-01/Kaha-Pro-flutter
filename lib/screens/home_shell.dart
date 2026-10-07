@@ -12,6 +12,7 @@ import 'register_screen.dart';
 import 'reports_screen.dart';
 import 'settings_panel.dart';
 import 'incoming_orders_panel.dart';
+import '../widgets/qr_ordering_gate.dart';
 import 'ai_assistant_screen.dart';
 import '../state/transaction_provider.dart';
 import '../state/product_provider.dart';
@@ -98,6 +99,9 @@ class _HomeShellState extends State<HomeShell> {
   /// where the new card appears on its own.
   void _onNewOrders(List<IncomingOrder> fresh) {
     if (!mounted || fresh.isEmpty || _section == _Section.incoming) return;
+    // No alerts for stores whose plan doesn't include QR Ordering
+    // (e.g. downgraded to Starter with old orders still arriving).
+    if (!context.read<StoreProvider>().canUseQrOrdering) return;
     final first = fresh.first;
     final where = first.tableLabel.isNotEmpty ? first.tableLabel : 'a table';
     final number = first.orderNumber != null ? ' #${first.orderNumber}' : '';
@@ -166,7 +170,9 @@ class _HomeShellState extends State<HomeShell> {
       case _Section.register:
         return RegisterScreen(cashierName: widget.user.name);
       case _Section.incoming:
-        return IncomingOrdersPanel(cashierName: widget.user.name);
+        return QrOrderingGate(
+          child: IncomingOrdersPanel(cashierName: widget.user.name),
+        );
       case _Section.transactions:
         return const TransactionsPanel();
       case _Section.reports:
@@ -325,7 +331,8 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pendingCount = context.watch<TransactionProvider>().pendingCount;
-    final incomingCount = context.watch<IncomingOrderProvider>().pendingCount;
+    final qrAllowed = context.watch<StoreProvider>().canUseQrOrdering;
+    final incomingCount = qrAllowed ? context.watch<IncomingOrderProvider>().pendingCount : 0;
 
     // Trial/plan urgency — shown as a plain dot on the Settings icon
     // rather than the full "Free trial · N days left" text anywhere

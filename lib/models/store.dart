@@ -173,6 +173,24 @@ class Store {
       plan == 'expired' ||
       (planExpiresAt != null && planExpiresAt!.isBefore(DateTime.now()));
 
+  /// QR Ordering (Tables, QR Menu, QR Order Payments, Incoming Orders)
+  /// is a Basic/Pro feature. The free trial mirrors Pro, so a store
+  /// still inside its trial window gets it too; Starter and an expired
+  /// trial do not. UX gate only -- the real enforcement must also live
+  /// server-side (RLS / the order-submit function).
+  bool get canUseQrOrdering {
+    if (isExpired) return false;
+    switch (plan) {
+      case 'basic':
+      case 'pro':
+        return true;
+      case 'free':
+        return planExpiresAt != null && planExpiresAt!.isAfter(DateTime.now());
+      default: // 'starter', 'expired', unknown
+        return false;
+    }
+  }
+
   /// Whole days left in the trial, floored at 0. Null when there's no
   /// expiry date to count down (paid plan, or not yet backfilled).
   int? get trialDaysRemaining {

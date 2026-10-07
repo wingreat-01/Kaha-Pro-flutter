@@ -16,6 +16,7 @@ import 'qr_payments_panel.dart';
 import 'categories_panel.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
+import '../widgets/qr_ordering_gate.dart';
 import '../widgets/currency_picker_tile.dart' show showCurrencyPicker;
 import '../models/store.dart';
 import 'upgrade_screen.dart';
@@ -93,6 +94,8 @@ class SettingsPanel extends StatelessWidget {
     final storeProvider = context.watch<StoreProvider>();
     final label = storeProvider.businessTypeLabel;
     final store = storeProvider.store;
+    final qrAllowed = storeProvider.canUseQrOrdering;
+    const qrLockedSubtitle = 'Basic & Pro plans only · tap to upgrade';
     final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
     final themeMode = context.watch<ThemeProvider>().mode;
     final currency = context.watch<CurrencyProvider>().currency;
@@ -114,25 +117,31 @@ class SettingsPanel extends StatelessWidget {
         _SettingsRow(
           icon: Icons.qr_code_2,
           label: 'Tables',
-          subtitle: 'Manage tables & QR ordering codes',
+          subtitle: qrAllowed ? 'Manage tables & QR ordering codes' : qrLockedSubtitle,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const TablesPanel()),
+            MaterialPageRoute(
+              builder: (_) => const QrOrderingGate(fullScreen: true, child: TablesPanel()),
+            ),
           ),
         ),
         _SettingsRow(
           icon: Icons.restaurant_menu,
           label: 'QR Menu',
-          subtitle: 'Choose which products show on the ordering page',
+          subtitle: qrAllowed ? 'Choose which products show on the ordering page' : qrLockedSubtitle,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const QrMenuPanel()),
+            MaterialPageRoute(
+              builder: (_) => const QrOrderingGate(fullScreen: true, child: QrMenuPanel()),
+            ),
           ),
         ),
         _SettingsRow(
           icon: Icons.account_balance_wallet_outlined,
           label: 'QR Order Payments',
-          subtitle: 'Pay at counter or online (GCash, Maya, bank QR)',
+          subtitle: qrAllowed ? 'Pay at counter or online (GCash, Maya, bank QR)' : qrLockedSubtitle,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const QrPaymentsPanel()),
+            MaterialPageRoute(
+              builder: (_) => const QrOrderingGate(fullScreen: true, child: QrPaymentsPanel()),
+            ),
           ),
         ),
         _SettingsRow(
