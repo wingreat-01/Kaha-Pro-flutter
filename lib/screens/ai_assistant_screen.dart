@@ -234,6 +234,20 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// The model sometimes returns markdown (**bold**, *italic*, "* " bullets)
+/// even though the system prompt asks for plain text, and this bubble
+/// renders plain Text, so the markers would show up literally. Stripped at
+/// display time only -- the stored message content is left untouched.
+String _stripMarkdown(String text) {
+  return text
+      .replaceAllMapped(RegExp(r'\*\*(.+?)\*\*', dotAll: true), (m) => m[1]!)
+      .replaceAllMapped(
+        RegExp(r'(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])'),
+        (m) => m[1]!,
+      )
+      .replaceAll(RegExp(r'^\s*\*\s+', multiLine: true), '- ');
+}
+
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   const _MessageBubble({required this.message});
@@ -257,7 +271,7 @@ class _MessageBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              message.content ?? '',
+              isUser ? (message.content ?? '') : _stripMarkdown(message.content ?? ''),
               style: AppTextStyles.mono(size: 13, color: Colors.white),
             ),
             if (!isUser && message.provider != null) ...[
