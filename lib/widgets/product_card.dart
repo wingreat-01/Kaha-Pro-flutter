@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'image_source_sheet.dart';
 import '../models/product.dart';
 import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
@@ -56,11 +56,7 @@ class _ProductCardState extends State<ProductCard> {
     if (_picking) return;
     setState(() => _picking = true);
     try {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        imageQuality: 85,
-      );
+      final picked = await pickImageWithSourceChoice(context);
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
       widget.onImageSelected?.call(bytes);

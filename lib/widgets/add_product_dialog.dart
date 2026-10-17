@@ -2,7 +2,7 @@ import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'image_source_sheet.dart';
 import '../models/product.dart';
 import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
@@ -141,11 +141,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
     if (_pickingImage) return;
     setState(() => _pickingImage = true);
     try {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        imageQuality: 85,
-      );
+      final picked = await pickImageWithSourceChoice(context);
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
       if (!mounted) return;
@@ -155,7 +151,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
       });
     } catch (_) {
       if (mounted) {
-        setState(() => _error = "Couldn't open your photos. Please try again.");
+        setState(() => _error = "Couldn't get the photo. Please try again.");
       }
     } finally {
       if (mounted) setState(() => _pickingImage = false);

@@ -513,6 +513,11 @@ class ProductProvider extends ChangeNotifier {
     );
   }
 
+  /// Deletes a product. Optimistic with rollback, but it now only counts as
+  /// deleted when the database really removed the row: `.select()` returns
+  /// the rows that were deleted, and a delete blocked by RLS (no DELETE
+  /// policy) removes nothing yet raises no error. Throws
+  /// [ProductDeleteException] (message safe to show) after rolling back.
   Future<void> removeProduct(String id) async {
     final index = _products.indexWhere((p) => p.id == id);
     if (index < 0) return;
@@ -520,12 +525,35 @@ class ProductProvider extends ChangeNotifier {
     _products.removeAt(index);
     notifyListeners();
 
+    void rollback() {
+      if (!_products.any((p) => p.id == id)) {
+        _products.insert(index.clamp(0, _products.length), removed);
+        notifyListeners();
+      }
+    }
+
     try {
-      await _client.from('products').delete().eq('id', id);
-    } catch (e) {
-      _products.insert(index, removed);
-      notifyListeners();
+      final deleted =
+          await _client.from('products').delete().eq('id', id).select('id');
+      if ((deleted as List).isEmpty) {
+        throw ProductDeleteException(
+            "The database didn't allow deleting this product.");
+      }
+    } on ProductDeleteException {
+      rollback();
       rethrow;
+    } on PostgrestException catch (e) {
+      debugPrint('removeProduct failed: ${e.code} ${e.message}');
+      rollback();
+      if (e.code == '23503') {
+        throw ProductDeleteException(
+            "This product is still linked to sales, recipes or stock history, so it can't be deleted.");
+      }
+      throw ProductDeleteException("Couldn't delete product — try again");
+    } catch (e) {
+      debugPrint('removeProduct failed: $e');
+      rollback();
+      throw ProductDeleteException("Couldn't delete product — try again");
     }
   }
 
@@ -1049,4 +1077,12 @@ class ProductProvider extends ChangeNotifier {
       rethrow;
     }
   }
+}
+
+/// Readable reason a product couldn't be deleted, safe to show in a snackbar.
+class ProductDeleteException implements Exception {
+  final String message;
+  ProductDeleteException(this.message);
+  @override
+  String toString() => message;
 }

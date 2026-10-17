@@ -279,9 +279,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Text('Cancel', style: AppTextStyles.body(size: 13, color: AppColors.textSecondary)),
           ),
           TextButton(
-            onPressed: () {
-              catalog.removeProduct(product.id);
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.of(context).pop();
+              try {
+                await catalog.removeProduct(product.id);
+              } catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    backgroundColor: AppColors.slate,
+                    content: Text(
+                      e is ProductDeleteException
+                          ? e.message
+                          : "Couldn't delete product — try again",
+                      style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+                    ),
+                  ),
+                );
+              }
             },
             child: Text('Delete', style: AppTextStyles.body(size: 13, weight: FontWeight.w700, color: AppColors.ledgerRed)),
           ),

@@ -248,9 +248,24 @@ class _CategoryProductsView extends StatelessWidget {
             child: Text('Cancel', style: AppTextStyles.body(color: AppColors.textSecondary)),
           ),
           TextButton(
-            onPressed: () {
-              catalog.removeProduct(product.id);
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(dialogContext);
               Navigator.of(dialogContext).pop();
+              try {
+                await catalog.removeProduct(product.id);
+              } catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    backgroundColor: AppColors.slate,
+                    content: Text(
+                      e is ProductDeleteException
+                          ? e.message
+                          : "Couldn't delete product — try again",
+                      style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+                    ),
+                  ),
+                );
+              }
             },
             child: Text('Delete', style: AppTextStyles.body(color: AppColors.ledgerRed, weight: FontWeight.w700)),
           ),
