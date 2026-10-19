@@ -41,9 +41,10 @@ class ProductProvider extends ChangeNotifier {
   /// the trigger is what actually enforces it. null = unlimited.
   static const Map<String, int?> _productLimits = {
     'free': 5,
-    'starter': 10,
-    'basic': 30,
+    'starter': 50,
+    'basic': 200,
     'pro': null,
+    'lifetime': null,
   };
 
   final SupabaseClient _client = Supabase.instance.client;

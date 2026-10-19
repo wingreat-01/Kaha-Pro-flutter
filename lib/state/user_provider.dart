@@ -37,6 +37,7 @@ class UserProvider extends ChangeNotifier {
     'starter': 2,
     'basic': 5,
     'pro': null,
+    'lifetime': null,
   };
 
   List<AppUser> _users = [];

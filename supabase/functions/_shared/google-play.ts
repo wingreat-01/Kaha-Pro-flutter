@@ -267,7 +267,21 @@ export async function applySubscriptionState(
     throw new Error(`store_subscriptions upsert failed: ${upsertError.message}`);
   }
 
-  if (entitled) {
+  // A Lifetime store never moves because of a subscription: an old
+  // subscription expiring/cancelling must not downgrade it, and a
+  // new subscription must not overwrite it. The subscription row and
+  // the audit log below are still written.
+  const { data: currentStore, error: currentStoreError } = await supabase
+    .from("stores")
+    .select("plan")
+    .eq("id", storeId)
+    .single();
+  if (currentStoreError) throw new Error(`stores plan fetch failed: ${currentStoreError.message}`);
+  const isLifetime = currentStore?.plan === "lifetime";
+
+  if (isLifetime) {
+    console.log("applySubscriptionState: store is on lifetime, skipping plan/credit changes");
+  } else if (entitled) {
     const { error: planError } = await supabase
       .from("stores")
       .update({ plan })

@@ -6,7 +6,7 @@ class Store {
   final String id;
   final String name;
   final String businessType; // 'food_beverage' | 'retail_hardware' | 'general'
-  final String plan; // 'free' | 'basic' | 'pro' | 'expired' (manual testing value, see below)
+  final String plan; // 'free' | 'starter' | 'basic' | 'pro' | 'lifetime' | 'expired' (manual testing value, see below)
   final DateTime? planExpiresAt; // real trial end date -- 30 days from
                           // creation for free-plan stores, set server-side
                           // by the trg_set_default_trial_expiry trigger
@@ -174,19 +174,19 @@ class Store {
       (planExpiresAt != null && planExpiresAt!.isBefore(DateTime.now()));
 
   /// QR Ordering (Tables, QR Menu, QR Order Payments, Incoming Orders)
-  /// is a Basic/Pro feature. The free trial mirrors Pro, so a store
-  /// still inside its trial window gets it too; Starter and an expired
-  /// trial do not. UX gate only -- the real enforcement must also live
+  /// is a Pro/Lifetime feature. The free trial mirrors Pro, so a store
+  /// still inside its trial window gets it too; Starter, Basic and an
+  /// expired trial do not. UX gate only -- the real enforcement must also live
   /// server-side (RLS / the order-submit function).
   bool get canUseQrOrdering {
     if (isExpired) return false;
     switch (plan) {
-      case 'basic':
       case 'pro':
+      case 'lifetime':
         return true;
       case 'free':
         return planExpiresAt != null && planExpiresAt!.isAfter(DateTime.now());
-      default: // 'starter', 'expired', unknown
+      default: // 'starter', 'basic', 'expired', unknown
         return false;
     }
   }

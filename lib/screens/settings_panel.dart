@@ -95,7 +95,7 @@ class SettingsPanel extends StatelessWidget {
     final label = storeProvider.businessTypeLabel;
     final store = storeProvider.store;
     final qrAllowed = storeProvider.canUseQrOrdering;
-    const qrLockedSubtitle = 'Basic & Pro plans only · tap to upgrade';
+    const qrLockedSubtitle = 'Pro & Lifetime plans only · tap to upgrade';
     final lowStockCount = context.watch<IngredientProvider>().lowStockIngredients.length;
     final themeMode = context.watch<ThemeProvider>().mode;
     final currency = context.watch<CurrencyProvider>().currency;
@@ -277,10 +277,14 @@ class SettingsPanel extends StatelessWidget {
 String _planSubtitle(Store? store) {
   if (store == null) return '';
   switch (store.plan) {
+    case 'starter':
+      return 'Starter plan';
     case 'basic':
       return 'Basic plan';
     case 'pro':
       return 'Pro plan';
+    case 'lifetime':
+      return 'Lifetime plan';
     case 'expired':
       return 'Trial expired · upgrade to continue';
     default: // 'free'

@@ -157,7 +157,7 @@ class IncomingOrderProvider extends ChangeNotifier with WidgetsBindingObserver {
             'id, order_number, status, total, customer_name, created_at, '
             'payment_method, payment_status, payment_reference, transaction_id, '
             'tables(label), '
-            'order_items(product_id, variant_id, quantity, price, variant_name, products(name))',
+            'order_items(product_id, variant_id, quantity, price, variant_name, product_name, products(name))',
           )
           .gte('created_at', since)
           .order('created_at', ascending: false)

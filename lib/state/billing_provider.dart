@@ -33,6 +33,12 @@ const List<String> kAllSubscriptionIds = [
   kProSubscriptionId,
 ];
 
+/// One-time (non-subscription) product for the Lifetime plan. Must
+/// match the Product ID created in Play Console under Monetize with
+/// Play > Products > One-time products. Verified server-side by the
+/// verify-lifetime Edge Function, not verify-purchase.
+const String kLifetimeProductId = 'merq_lifetime';
+
 /// Base plan IDs within each subscription product above -- same two
 /// names reused across all three products, matching whatever you
 /// name the base plans in Play Console for each one.
@@ -143,7 +149,7 @@ class BillingProvider extends ChangeNotifier {
     loadError = null;
     notifyListeners();
 
-    final response = await _iap.queryProductDetails(kAllSubscriptionIds.toSet());
+    final response = await _iap.queryProductDetails({...kAllSubscriptionIds, kLifetimeProductId});
     if (response.error != null) {
       loadError = response.error!.message;
     }
@@ -278,6 +284,40 @@ class BillingProvider extends ChangeNotifier {
     }
   }
 
+  /// Launches Google's purchase sheet for the one-time Lifetime
+  /// product. Like buySubscription, the result arrives later via
+  /// purchaseStream (_onPurchaseUpdate -> _verifyAndActivate), so the
+  /// UI watches [purchaseInProgress]/[purchaseError] instead of
+  /// awaiting this. There is no billing period or offer to pick, and
+  /// no existing purchase to replace.
+  Future<void> buyLifetime() async {
+    final product = products[kLifetimeProductId];
+    if (product == null) {
+      purchaseError = 'Lifetime is not available for purchase right now.';
+      notifyListeners();
+      return;
+    }
+
+    purchaseError = null;
+    purchaseInProgress = true;
+    notifyListeners();
+
+    try {
+      final launched = await _iap.buyNonConsumable(
+        purchaseParam: GooglePlayPurchaseParam(productDetails: product),
+      );
+      if (!launched) {
+        purchaseError = 'Could not open the purchase screen. Please try again.';
+        purchaseInProgress = false;
+        notifyListeners();
+      }
+    } catch (e) {
+      purchaseError = 'Could not start the purchase: $e';
+      purchaseInProgress = false;
+      notifyListeners();
+    }
+  }
+
   /// Required by Play policy (subscriptions must be restorable, e.g.
   /// after a reinstall) -- wired to the "Restore" button in
   /// UpgradeScreen's app bar. Also doubles as how _activeSubscriptions
@@ -365,8 +405,12 @@ class BillingProvider extends ChangeNotifier {
     }
 
     try {
+      // Lifetime is a one-time product with its own verifier; the
+      // three subscription tiers keep using verify-purchase.
+      final functionName =
+          purchase.productID == kLifetimeProductId ? 'verify-lifetime' : 'verify-purchase';
       final response = await Supabase.instance.client.functions.invoke(
-        'verify-purchase',
+        functionName,
         body: {
           'productId': purchase.productID,
           'purchaseToken': purchase.verificationData.serverVerificationData,

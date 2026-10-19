@@ -108,9 +108,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final chat = context.watch<AiAssistantProvider>();
     final store = context.watch<StoreProvider>().store;
     final canSend = store == null || store.canUseAiAssistant;
+    // Lifetime has no AI credits (not included in that plan).
+    final lifetimeNoAi =
+        store != null && store.plan == 'lifetime' && store.aiCreditsRemaining == 0;
     final creditsLabel = store == null
         ? null
-        : store.isExpired
+        : lifetimeNoAi
+            ? 'Not included in the Lifetime plan'
+            : store.isExpired
             ? 'Trial expired · upgrade to continue'
             : '${store.aiCreditsRemaining} credit${store.aiCreditsRemaining == 1 ? '' : 's'} left this month';
 
@@ -191,7 +196,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     isSending: chat.isSending,
                     disabledHint: store == null
                         ? null
-                        : store.isExpired
+                        : lifetimeNoAi
+                            ? 'The AI assistant is not included in Lifetime'
+                            : store.isExpired
                             ? 'Upgrade your plan to keep using the assistant'
                             : 'Out of credits — resets next cycle',
                     onSend: _send,

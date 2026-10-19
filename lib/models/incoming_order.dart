@@ -33,7 +33,11 @@ class IncomingOrderItem {
     return IncomingOrderItem(
       productId: row['product_id'] as String?,
       variantId: row['variant_id'] as String?,
-      name: (product is Map ? product['name'] as String? : null) ?? 'Item',
+      // Live product name, else the snapshot saved on the order line (the
+      // product may have been deleted since the order was placed).
+      name: (product is Map ? product['name'] as String? : null) ??
+          row['product_name'] as String? ??
+          'Item',
       variantName: row['variant_name'] as String?,
       quantity: (row['quantity'] as num?)?.toInt() ?? 1,
       price: _toDouble(row['price']),

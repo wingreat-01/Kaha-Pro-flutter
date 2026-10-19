@@ -4,7 +4,7 @@ import '../screens/upgrade_screen.dart';
 import '../state/store_provider.dart';
 import '../theme/app_theme.dart';
 
-/// Plan gate for QR Ordering (Basic and Pro only; the free trial
+/// Plan gate for QR Ordering (Pro and Lifetime only; the free trial
 /// mirrors Pro). Wrap any QR Ordering screen in this: it shows [child]
 /// when the store's plan includes the feature, otherwise a locked
 /// screen with an upgrade button.
@@ -77,7 +77,7 @@ class _LockedView extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                'QR Ordering is a Basic & Pro feature',
+                'QR Ordering is a Pro & Lifetime feature',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.mono(size: 15, weight: FontWeight.w700),
               ),
@@ -85,7 +85,7 @@ class _LockedView extends StatelessWidget {
               Text(
                 expired
                     ? 'Your trial has ended. Pick a plan to let customers scan, order and pay from their table.'
-                    : 'Upgrade to Basic or Pro to let customers scan a table QR, order from your menu and pay from their phone.',
+                    : 'Upgrade to Pro or Lifetime to let customers scan a table QR, order from your menu and pay from their phone.',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.body(size: 13, color: AppColors.textMuted),
               ),

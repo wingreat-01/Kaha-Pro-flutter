@@ -61,8 +61,8 @@ const List<_PlanInfo> _kPlans = [
     id: 'starter',
     subscriptionId: kStarterSubscriptionId,
     name: 'Starter',
-    monthlyPrice: '₱190/mo',
-    yearlyPrice: '₱1,900/yr',
+    monthlyPrice: '₱99/mo',
+    yearlyPrice: '₱990/yr',
     features: [
       '2 staff account',
       '30 days transaction history',
@@ -74,8 +74,8 @@ const List<_PlanInfo> _kPlans = [
     id: 'basic',
     subscriptionId: kBasicSubscriptionId,
     name: 'Basic',
-    monthlyPrice: '₱290/mo',
-    yearlyPrice: '₱2,900/yr',
+    monthlyPrice: '₱199/mo',
+    yearlyPrice: '₱1,990/yr',
     features: [
       '5 staff accounts',
       '90 days transaction history',
@@ -87,13 +87,28 @@ const List<_PlanInfo> _kPlans = [
     id: 'pro',
     subscriptionId: kProSubscriptionId,
     name: 'Pro',
-    monthlyPrice: '₱490/mo',
-    yearlyPrice: '₱4,900/yr',
+    monthlyPrice: '₱299/mo',
+    yearlyPrice: '₱2,990/yr',
     features: [
       'Unlimited staff accounts',
       'Unlimited transaction history',
       '100 AI assistant credits / month',
       'Unlimited products',
+      'QR ordering',
+      'Priority support',
+    ],
+  ),
+  // One-time purchase, not a subscription: no subscriptionId and no
+  // monthly/yearly choice. Bought via BillingProvider.buyLifetime()
+  // (product kLifetimeProductId) and verified by verify-lifetime.
+  _PlanInfo(
+    id: 'lifetime',
+    name: 'Lifetime',
+    monthlyPrice: '₱3,490',
+    yearlyPrice: null,
+    features: [
+      'Everything in Pro, except the AI assistant',
+      'Pay once, no monthly fees',
       'Priority support',
     ],
   ),
@@ -177,6 +192,28 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
       });
     } else if (error == null) {
       _lastShownError = null;
+    }
+  }
+
+  Future<void> _confirmLifetime() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.slate,
+        title: Text('Buy Lifetime?', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
+        content: Text(
+          'You pay ₱3,490 once and keep access with no renewals. '
+          'If you have an active Starter, Basic or Pro subscription, cancel it in Google Play so you are not billed twice.',
+          style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Not now')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Continue')),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      context.read<BillingProvider>().buyLifetime();
     }
   }
 
@@ -307,14 +344,19 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                 child: Text(billing.loadError!, style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
               ),
             ],
+            // A Lifetime owner is done: hide the subscription cards so
+            // nobody buys a subscription that would replace Lifetime.
             for (final plan in _kPlans)
-              _PlanCard(
-                plan: plan,
-                isCurrent: plan.id == currentPlanId,
-                purchaseInProgress: billing.purchaseInProgress,
-                isWeb: kIsWeb,
-                onChoosePeriod: () => _choosePeriod(context, plan),
-              ),
+              if (currentPlanId != 'lifetime' || plan.id == 'lifetime')
+                _PlanCard(
+                  plan: plan,
+                  isCurrent: plan.id == currentPlanId,
+                  purchaseInProgress: billing.purchaseInProgress,
+                  isWeb: kIsWeb,
+                  onChoosePeriod: () => plan.id == 'lifetime'
+                      ? _confirmLifetime()
+                      : _choosePeriod(context, plan),
+                ),
           ],
         ),
       ),
@@ -414,6 +456,9 @@ class _PlanCard extends StatelessWidget {
               ] else if (plan.id == 'free') ...[
                 const SizedBox(width: 8),
                 Text('for 30 days', style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+              ] else if (plan.id == 'lifetime') ...[
+                const SizedBox(width: 8),
+                Text('one-time payment', style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
               ],
             ],
           ),
@@ -465,7 +510,7 @@ class _PlanCard extends StatelessWidget {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text('Choose ${plan.name}', style: AppTextStyles.body(size: 13, weight: FontWeight.w700)),
+                    : Text(plan.id == 'lifetime' ? 'Buy Lifetime' : 'Choose ${plan.name}', style: AppTextStyles.body(size: 13, weight: FontWeight.w700)),
               ),
             ),
         ],
