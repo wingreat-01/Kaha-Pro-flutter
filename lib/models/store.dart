@@ -176,9 +176,12 @@ class Store {
   /// The store was created with the Retail / Hardware business type.
   bool get isRetail => businessType == 'retail_hardware';
 
-  /// Barcode scanning is live: a Retail store that switched it on in
-  /// Settings. Gate every scan button / barcode field on this.
-  bool get barcodeScannerAvailable => isRetail && barcodeScannerEnabled;
+  /// Business types that are offered the Barcode Scanner switch.
+  bool get supportsBarcodeScanner => isRetail || businessType == 'general';
+
+  /// Barcode scanning is live: a Retail or General store that switched it
+  /// on in Settings. Gate every scan button / barcode field on this.
+  bool get barcodeScannerAvailable => supportsBarcodeScanner && barcodeScannerEnabled;
 
   /// True when the trial-expired banner/lock should show. Two paths:
   ///  - plan == 'expired': the manual testing override (see

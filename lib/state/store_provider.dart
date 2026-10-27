@@ -71,6 +71,10 @@ class StoreProvider extends ChangeNotifier {
   /// that are offered the Barcode Scanner switch in Settings.
   bool get isRetail => _store?.isRetail ?? false;
 
+  /// True for Retail and General stores — the ones offered the Barcode
+  /// Scanner switch in Settings.
+  bool get supportsBarcodeScanner => _store?.supportsBarcodeScanner ?? false;
+
   /// Barcode scanning is on (Retail store + switched on in Settings).
   /// Defaults closed until the store loads, like every flag here.
   bool get barcodeScannerAvailable => _store?.barcodeScannerAvailable ?? false;

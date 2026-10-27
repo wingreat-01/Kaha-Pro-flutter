@@ -198,8 +198,8 @@ class SettingsPanel extends StatelessWidget {
           value: receiptOptions.showVatBreakdown,
           onChanged: (value) => context.read<ReceiptOptionsProvider>().setShowVatBreakdown(value),
         ),
-        // Retail stores only — other business types never see this.
-        if (storeProvider.isRetail)
+        // Retail and General stores only — Food & Beverage never sees this.
+        if (storeProvider.supportsBarcodeScanner)
           _ToggleSettingsRow(
             icon: Icons.qr_code_scanner,
             label: 'Barcode Scanner',
