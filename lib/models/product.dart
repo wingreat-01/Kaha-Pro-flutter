@@ -63,6 +63,16 @@ class Product {
                           // hides a tracked-stock item once stockQty hits 0,
                           // regardless of this flag.
 
+  final String? barcode; // optional EAN/UPC/Code128 etc. printed on the item.
+                          // Only used when the store has the Barcode Scanner
+                          // feature on (Retail stores, Settings). Unique per
+                          // store. Compare with [normalizeBarcode], never ==.
+
+  final bool trackUnits; // serialized stock: every unit has its own barcode
+                          // (rows in product_units). stockQty then equals
+                          // the number of in-stock units. Set by the batch
+                          // add flow; selling is done by scanning a unit.
+
   const Product({
     required this.id,
     required this.name,
@@ -78,7 +88,22 @@ class Product {
     this.costPerUnit,
     this.variants = const [],
     this.showOnQrMenu = true,
+    this.barcode,
+    this.trackUnits = false,
   });
+
+  /// Canonical form for comparing a scanned/typed barcode with a stored
+  /// one. Trims whitespace and, for all-digit codes, drops leading zeros
+  /// — some scanners report a 12-digit UPC-A as a 13-digit EAN-13 with a
+  /// leading 0, and both must match the same product.
+  static String normalizeBarcode(String raw) {
+    final t = raw.trim();
+    if (RegExp(r'^\d+$').hasMatch(t)) {
+      final stripped = t.replaceFirst(RegExp(r'^0+'), '');
+      return stripped.isEmpty ? '0' : stripped;
+    }
+    return t;
+  }
 
   /// True when at least one size keeps its own stock count (see
   /// [ProductVariant.stockQty]). False for products without sizes and
@@ -150,6 +175,9 @@ class Product {
     bool clearCostPerUnit = false, // true = set cost back to "not set"
     List<ProductVariant>? variants,
     bool? showOnQrMenu,
+    String? barcode,
+    bool clearBarcode = false, // true = remove the barcode
+    bool? trackUnits,
   }) {
     return Product(
       id: id,
@@ -166,6 +194,8 @@ class Product {
       costPerUnit: clearCostPerUnit ? null : (costPerUnit ?? this.costPerUnit),
       variants: variants ?? this.variants,
       showOnQrMenu: showOnQrMenu ?? this.showOnQrMenu,
+      barcode: clearBarcode ? null : (barcode ?? this.barcode),
+      trackUnits: trackUnits ?? this.trackUnits,
     );
   }
 }

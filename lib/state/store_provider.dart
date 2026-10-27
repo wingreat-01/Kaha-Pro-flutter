@@ -67,6 +67,15 @@ class StoreProvider extends ChangeNotifier {
   /// (likely-off) value has loaded.
   bool get receiptPrintingEnabled => _store?.receiptPrintingEnabled ?? false;
 
+  /// True for stores created as Retail / Hardware — the only stores
+  /// that are offered the Barcode Scanner switch in Settings.
+  bool get isRetail => _store?.isRetail ?? false;
+
+  /// Barcode scanning is on (Retail store + switched on in Settings).
+  /// Defaults closed until the store loads, like every flag here.
+  bool get barcodeScannerAvailable => _store?.barcodeScannerAvailable ?? false;
+  bool get barcodeScannerEnabled => _store?.barcodeScannerEnabled ?? false;
+
   /// Runs an UPDATE on the caller's `stores` row and throws a
   /// [StateError] if it matched no rows (RLS policy missing, or the
   /// store id isn't visible to the caller). Also surfaces column-grant
@@ -95,8 +104,9 @@ class StoreProvider extends ChangeNotifier {
           .from('stores')
           .select(
             'id, name, business_type, plan, plan_expires_at, '
-            'ai_credits_remaining, ai_credits_reset_at, '
+            'ai_credits_remaining, ai_credits_bonus, ai_credits_reset_at, '
             'senior_pwd_discount_enabled, receipt_printing_enabled, '
+            'barcode_scanner_enabled, '
             'address, receipt_footer, tin, contact_number, permit_number, '
             'qr_pay_counter_enabled, qr_pay_online_enabled, '
             'online_payment_qr_url, online_payment_instructions',
@@ -119,6 +129,27 @@ class StoreProvider extends ChangeNotifier {
   /// real server-side count (e.g. if a credit was consumed server-side
   /// but the client threw before reaching its own decrement step), so
   /// the UI now always reflects exactly what Supabase says is left.
+  /// Re-reads both credit balances (monthly + purchased) from Supabase.
+  /// Used after each AI reply and after a credit pack purchase, since
+  /// the server spends monthly credits first and purchased ones after,
+  /// so a single returned number can't describe both.
+  Future<void> refreshAiCredits() async {
+    if (_store == null) return;
+    try {
+      final row = await _client
+          .from('stores')
+          .select('ai_credits_remaining, ai_credits_bonus')
+          .single();
+      _store = _store!.copyWith(
+        aiCreditsRemaining: (row['ai_credits_remaining'] as num?)?.toInt() ?? 0,
+        aiCreditsBonus: (row['ai_credits_bonus'] as num?)?.toInt() ?? 0,
+      );
+      notifyListeners();
+    } catch (_) {
+      // Keep the last known numbers; the next load corrects them.
+    }
+  }
+
   void setAiCreditsRemaining(int value) {
     if (_store == null) return;
     _store = _store!.copyWith(aiCreditsRemaining: value < 0 ? 0 : value);
@@ -159,6 +190,25 @@ class StoreProvider extends ChangeNotifier {
 
     try {
       await _updateStoreRow(current.id, {'receipt_printing_enabled': value});
+    } catch (e) {
+      _store = current; // revert
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Flips the Barcode Scanner toggle in Settings (Retail stores only).
+  /// Same optimistic-update-then-persist-then-rollback shape as the
+  /// toggles above.
+  Future<void> setBarcodeScannerEnabled(bool value) async {
+    final current = _store;
+    if (current == null) return;
+
+    _store = current.copyWith(barcodeScannerEnabled: value);
+    notifyListeners();
+
+    try {
+      await _updateStoreRow(current.id, {'barcode_scanner_enabled': value});
     } catch (e) {
       _store = current; // revert
       notifyListeners();

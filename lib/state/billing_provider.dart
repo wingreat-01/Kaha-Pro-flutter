@@ -39,6 +39,12 @@ const List<String> kAllSubscriptionIds = [
 /// verify-lifetime Edge Function, not verify-purchase.
 const String kLifetimeProductId = 'merq_lifetime';
 
+/// Consumable AI credit pack (50 credits). Must match the Product ID in
+/// Play Console. Verified by the verify-ai-credits Edge Function, which
+/// adds the credits and then consumes the purchase so it can be bought
+/// again.
+const String kAiCreditsProductId = 'merq_ai_credits_50';
+
 /// Base plan IDs within each subscription product above -- same two
 /// names reused across all three products, matching whatever you
 /// name the base plans in Play Console for each one.
@@ -149,7 +155,7 @@ class BillingProvider extends ChangeNotifier {
     loadError = null;
     notifyListeners();
 
-    final response = await _iap.queryProductDetails({...kAllSubscriptionIds, kLifetimeProductId});
+    final response = await _iap.queryProductDetails({...kAllSubscriptionIds, kLifetimeProductId, kAiCreditsProductId});
     if (response.error != null) {
       loadError = response.error!.message;
     }
@@ -318,6 +324,39 @@ class BillingProvider extends ChangeNotifier {
     }
   }
 
+  /// Launches Google's purchase sheet for one AI credit pack. autoConsume
+  /// is off on purpose: the server adds the credits first and then
+  /// consumes the purchase, so a failed verification never loses a paid
+  /// pack (it stays owned and is retried by Restore purchases).
+  Future<void> buyAiCredits() async {
+    final product = products[kAiCreditsProductId];
+    if (product == null) {
+      purchaseError = 'AI credits are not available for purchase right now.';
+      notifyListeners();
+      return;
+    }
+
+    purchaseError = null;
+    purchaseInProgress = true;
+    notifyListeners();
+
+    try {
+      final launched = await _iap.buyConsumable(
+        purchaseParam: GooglePlayPurchaseParam(productDetails: product),
+        autoConsume: false,
+      );
+      if (!launched) {
+        purchaseError = 'Could not open the purchase screen. Please try again.';
+        purchaseInProgress = false;
+        notifyListeners();
+      }
+    } catch (e) {
+      purchaseError = 'Could not start the purchase: $e';
+      purchaseInProgress = false;
+      notifyListeners();
+    }
+  }
+
   /// Required by Play policy (subscriptions must be restorable, e.g.
   /// after a reinstall) -- wired to the "Restore" button in
   /// UpgradeScreen's app bar. Also doubles as how _activeSubscriptions
@@ -405,10 +444,14 @@ class BillingProvider extends ChangeNotifier {
     }
 
     try {
-      // Lifetime is a one-time product with its own verifier; the
-      // three subscription tiers keep using verify-purchase.
-      final functionName =
-          purchase.productID == kLifetimeProductId ? 'verify-lifetime' : 'verify-purchase';
+      // Lifetime and AI credit packs are one-time products with their
+      // own verifiers; the three subscription tiers use verify-purchase.
+      var functionName = 'verify-purchase';
+      if (purchase.productID == kLifetimeProductId) {
+        functionName = 'verify-lifetime';
+      } else if (purchase.productID == kAiCreditsProductId) {
+        functionName = 'verify-ai-credits';
+      }
       final response = await Supabase.instance.client.functions.invoke(
         functionName,
         body: {

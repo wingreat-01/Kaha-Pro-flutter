@@ -18,6 +18,7 @@ class Store {
                           // extension to 30 days was deliberately not
                           // backfilled onto existing stores.
   final int aiCreditsRemaining; // this cycle's remaining AI Assistant credits
+  final int aiCreditsBonus; // purchased credit-pack credits, never reset monthly
   final DateTime? aiCreditsResetAt; // when the monthly credit count next resets
   // Senior Citizen / PWD discount (RA 9994 / RA 10754) feature toggle.
   // Off by default (see 005_senior_pwd_discount.sql) — when false, the
@@ -31,6 +32,11 @@ class Store {
   // actual Bluetooth thermal printing is a planned Stage 2 that will
   // reuse this same flag.
   final bool receiptPrintingEnabled;
+  // Barcode scanner feature toggle (027_barcode_scanner.sql). Only
+  // offered to Retail stores (see [isRetail]) and off by default — when
+  // off, no scan buttons / barcode fields appear anywhere. Use
+  // [barcodeScannerAvailable] to check, not this flag alone.
+  final bool barcodeScannerEnabled;
   // Store Details screen fields (007_store_details.sql) — both free
   // text, both nullable/empty until the owner fills them in. address
   // is display-only elsewhere for now; receiptFooter is meant to be
@@ -59,9 +65,11 @@ class Store {
     required this.plan,
     this.planExpiresAt,
     this.aiCreditsRemaining = 0,
+    this.aiCreditsBonus = 0,
     this.aiCreditsResetAt,
     this.seniorPwdDiscountEnabled = false,
     this.receiptPrintingEnabled = false,
+    this.barcodeScannerEnabled = false,
     this.address,
     this.receiptFooter,
     this.tin,
@@ -83,9 +91,11 @@ class Store {
       plan: row['plan'] as String? ?? 'free',
       planExpiresAt: expiresRaw != null ? DateTime.parse(expiresRaw) : null,
       aiCreditsRemaining: (row['ai_credits_remaining'] as num?)?.toInt() ?? 0,
+      aiCreditsBonus: (row['ai_credits_bonus'] as num?)?.toInt() ?? 0,
       aiCreditsResetAt: creditsResetRaw != null ? DateTime.parse(creditsResetRaw) : null,
       seniorPwdDiscountEnabled: row['senior_pwd_discount_enabled'] as bool? ?? false,
       receiptPrintingEnabled: row['receipt_printing_enabled'] as bool? ?? false,
+      barcodeScannerEnabled: row['barcode_scanner_enabled'] as bool? ?? false,
       address: row['address'] as String?,
       receiptFooter: row['receipt_footer'] as String?,
       tin: row['tin'] as String?,
@@ -121,8 +131,10 @@ class Store {
     String? contactNumber,
     String? permitNumber,
     int? aiCreditsRemaining,
+    int? aiCreditsBonus,
     bool? seniorPwdDiscountEnabled,
     bool? receiptPrintingEnabled,
+    bool? barcodeScannerEnabled,
     bool? qrPayCounterEnabled,
     bool? qrPayOnlineEnabled,
     String? onlinePaymentQrUrl,
@@ -142,9 +154,11 @@ class Store {
         plan: plan,
         planExpiresAt: planExpiresAt,
         aiCreditsRemaining: aiCreditsRemaining ?? this.aiCreditsRemaining,
+        aiCreditsBonus: aiCreditsBonus ?? this.aiCreditsBonus,
         aiCreditsResetAt: aiCreditsResetAt,
         seniorPwdDiscountEnabled: seniorPwdDiscountEnabled ?? this.seniorPwdDiscountEnabled,
         receiptPrintingEnabled: receiptPrintingEnabled ?? this.receiptPrintingEnabled,
+        barcodeScannerEnabled: barcodeScannerEnabled ?? this.barcodeScannerEnabled,
         address: clearAddress ? null : (address ?? this.address),
         receiptFooter: clearReceiptFooter ? null : (receiptFooter ?? this.receiptFooter),
         tin: clearTin ? null : (tin ?? this.tin),
@@ -158,6 +172,13 @@ class Store {
             ? null
             : (onlinePaymentInstructions ?? this.onlinePaymentInstructions),
       );
+
+  /// The store was created with the Retail / Hardware business type.
+  bool get isRetail => businessType == 'retail_hardware';
+
+  /// Barcode scanning is live: a Retail store that switched it on in
+  /// Settings. Gate every scan button / barcode field on this.
+  bool get barcodeScannerAvailable => isRetail && barcodeScannerEnabled;
 
   /// True when the trial-expired banner/lock should show. Two paths:
   ///  - plan == 'expired': the manual testing override (see
@@ -204,7 +225,10 @@ class Store {
   /// has_ai_credit() server-side, but this is UX only: the edge
   /// function is still the real enforcement (see kahapro-subscription-
   /// plan.md -- Flutter checks are convenience, not security).
-  bool get canUseAiAssistant => !isExpired && aiCreditsRemaining > 0;
+  /// Monthly plan credits plus purchased credit-pack credits.
+  int get totalAiCredits => aiCreditsRemaining + aiCreditsBonus;
+
+  bool get canUseAiAssistant => !isExpired && totalAiCredits > 0;
 
   /// The label used everywhere this section is referenced — the
   /// Settings row, the panel's own title, and empty-state copy. Used

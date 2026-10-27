@@ -78,6 +78,17 @@ class SettingsPanel extends StatelessWidget {
     }
   }
 
+  Future<void> _toggleBarcodeScanner(BuildContext context, bool value) async {
+    try {
+      await context.read<StoreProvider>().setBarcodeScannerEnabled(value);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save — check your connection and try again.')),
+      );
+    }
+  }
+
   String _themeSubtitle(ThemeMode mode) {
     switch (mode) {
       case ThemeMode.light:
@@ -187,6 +198,17 @@ class SettingsPanel extends StatelessWidget {
           value: receiptOptions.showVatBreakdown,
           onChanged: (value) => context.read<ReceiptOptionsProvider>().setShowVatBreakdown(value),
         ),
+        // Retail stores only — other business types never see this.
+        if (storeProvider.isRetail)
+          _ToggleSettingsRow(
+            icon: Icons.qr_code_scanner,
+            label: 'Barcode Scanner',
+            subtitle: storeProvider.barcodeScannerEnabled
+                ? 'Enabled — scan to add products and ring up sales'
+                : 'Disabled — products are added and sold by tapping',
+            value: storeProvider.barcodeScannerEnabled,
+            onChanged: (value) => _toggleBarcodeScanner(context, value),
+          ),
         _SettingsRow(
           icon: Icons.inventory_2_outlined,
           label: 'Products',

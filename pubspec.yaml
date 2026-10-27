@@ -1,7 +1,7 @@
 name: kahapro_flutter
 description: Merq POS — Flutter migration
 publish_to: 'none'
-version: 0.1.0+28
+version: 0.1.0+32
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -27,6 +27,7 @@ dependencies:
   qr_flutter: ^4.1.0
   share_plus: ^7.2.2
   path_provider: ^2.1.4
+  mobile_scanner: ^7.0.0
 
 dev_dependencies:
   flutter_test:

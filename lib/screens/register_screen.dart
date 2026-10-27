@@ -16,6 +16,11 @@ import '../widgets/product_size_picker_sheet.dart';
 import '../widgets/cart_side_panel.dart';
 import '../widgets/cart_bottom_bar.dart';
 import '../widgets/checkout_modal.dart';
+import '../models/product_variant.dart';
+import '../state/store_provider.dart';
+import '../widgets/barcode_keyboard_listener.dart';
+import '../widgets/barcode_scanner_screen.dart';
+import '../widgets/batch_add_product_dialog.dart';
 
 /// Phase 2 — Pass B + C: cart wired via CartProvider, amber LED total,
 /// dashboard-style category navigation, a customizable catalog (add
@@ -96,7 +101,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  void _openAddProductDialog(BuildContext context, ProductProvider catalog) {
+  void _openAddProductDialog(BuildContext context, ProductProvider catalog, {String? initialBarcode}) {
     // Captured here (not inside onSubmit) same reasoning as catalog
     // itself — this method already runs with a valid context, and the
     // onSubmit closure below fires later, after the dialog's Navigator
@@ -113,10 +118,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
         initialCategory: _selectedCategory,
         productLimit: catalog.productLimit,
         currentProductCount: catalog.productCount,
+        barcodeEnabled: context.read<StoreProvider>().barcodeScannerAvailable,
+        initialBarcode: initialBarcode,
+        findByBarcode: catalog.findByBarcode,
         // onUpgradeTap: left unwired until an upgrade screen/flow exists
         // (per the subscription plan doc's build order) — Cancel-only
         // for now on the limit-reached view.
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const []}) {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const [], barcode}) {
           catalog
               .addProduct(
                 name: name,
@@ -127,6 +135,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 trackStock: trackStock,
                 unit: unit,
                 unitLabel: unitLabel,
+                barcode: barcode,
               )
               .then((newId) async {
             // Sizes were staged locally in the dialog since the
@@ -206,7 +215,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             // rejected the insert.
             final message = e is ProductLimitExceededException
                 ? e.message
-                : 'Couldn\'t add product — try again';
+                : e is DuplicateBarcodeException
+                    ? e.message
+                    : 'Couldn\'t add product — try again';
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 backgroundColor: AppColors.slate,
@@ -230,7 +241,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
             .where((c) => c != ProductProvider.uncategorized)
             .toList(),
         editingProduct: product,
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const []}) async {
+        onAddUnits: product.trackUnits && context.read<StoreProvider>().barcodeScannerAvailable
+            ? () => _openAddUnitsDialog(context, catalog, product)
+            : null,
+        barcodeEnabled: context.read<StoreProvider>().barcodeScannerAvailable,
+        findByBarcode: catalog.findByBarcode,
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const [], barcode}) async {
           try {
             await catalog.updateProduct(
               product.id,
@@ -245,13 +261,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
             if (imageBytes != null) {
               await catalog.updateProductImage(product.id, imageBytes);
             }
+            if (barcode != null) {
+              await catalog.setBarcode(product.id, barcode.isEmpty ? null : barcode);
+            }
           } catch (e) {
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 backgroundColor: AppColors.slate,
                 content: Text(
-                  "Couldn't save changes — try again",
+                  e is DuplicateBarcodeException ? e.message : "Couldn't save changes — try again",
                   style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
                 ),
               ),
@@ -307,6 +326,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   void _onProductTap(BuildContext context, CartProvider cart, Product product) {
     if (_editMode) return; // edit mode taps go through onEdit, not onTap
+    // Serialized item: it must be sold by scanning a specific unit, or the
+    // unit list and the stock count drift apart.
+    if (product.trackUnits && context.read<StoreProvider>().barcodeScannerAvailable) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.slate,
+          content: Text(
+            'Scan a unit\'s barcode to sell ${product.name}',
+            style: AppTextStyles.body(size: 13, color: AppColors.ledAmber),
+          ),
+          action: SnackBarAction(
+            label: 'SCAN',
+            textColor: AppColors.ledAmber,
+            onPressed: () => _openCameraScanner(context),
+          ),
+        ),
+      );
+      return;
+    }
     if (!product.hasVariants) {
       cart.add(product);
       return;
@@ -315,6 +354,175 @@ class _RegisterScreenState extends State<RegisterScreen> {
       context,
       product: product,
       onSelected: (variant) => cart.add(product, variant: variant),
+    );
+  }
+
+  /// Rings up a scanned barcode: finds the product and adds it to the
+  /// cart (asking for a size first when the product has sizes). Shared
+  /// by the camera scanner and hardware (USB / Bluetooth) scanners.
+  /// [sheetContext] is where the size picker opens — the scanner
+  /// screen's own context while the camera is up.
+  Future<ScanFeedback> _handleScannedCode(BuildContext sheetContext, String raw) async {
+    final catalog = context.read<ProductProvider>();
+    final cart = context.read<CartProvider>();
+    final product = catalog.findByBarcode(raw);
+
+    if (product == null) {
+      // Serialized stock: the barcode may belong to one specific unit.
+      final unit = catalog.findUnitByBarcode(raw);
+      final unitProduct = unit == null ? null : catalog.productById(unit.productId);
+      if (unit != null && unitProduct != null) {
+        return cart.addUnit(unitProduct, unit.id)
+            ? ScanFeedback.ok('Added ${unitProduct.name}')
+            : ScanFeedback.fail('That unit is already in the cart');
+      }
+      if (catalog.wasUnitSold(raw)) {
+        return ScanFeedback.fail('That unit was already sold');
+      }
+      return ScanFeedback.fail(
+        'No product with barcode $raw',
+        actionLabel: 'ADD PRODUCT',
+        onAction: () {
+          if (mounted) _openAddProductDialog(context, catalog, initialBarcode: raw);
+        },
+      );
+    }
+
+    if (!product.hasVariants) {
+      cart.add(product);
+      return ScanFeedback.ok('Added ${product.name}');
+    }
+
+    ProductVariant? picked;
+    await ProductSizePickerSheet.show(
+      sheetContext,
+      product: product,
+      onSelected: (variant) => picked = variant,
+    );
+    final variant = picked;
+    if (variant == null) return ScanFeedback.fail('No size picked for ${product.name}');
+    cart.add(product, variant: variant);
+    return ScanFeedback.ok('Added ${product.name} (${variant.name})');
+  }
+
+  /// A barcode arrived from a USB / Bluetooth scanner (see
+  /// BarcodeKeyboardListener) — ring it up and confirm with a snackbar.
+  Future<void> _onWedgeScan(String code) async {
+    final feedback = await _handleScannedCode(context, code);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.slate,
+        duration: Duration(seconds: feedback.ok ? 2 : 4),
+        content: Text(
+          feedback.message,
+          style: AppTextStyles.body(
+            size: 13,
+            color: feedback.ok ? AppColors.tillGreen : AppColors.ledgerRed,
+          ),
+        ),
+        action: feedback.actionLabel != null && feedback.onAction != null
+            ? SnackBarAction(
+                label: feedback.actionLabel!,
+                textColor: AppColors.ledAmber,
+                onPressed: feedback.onAction!,
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _openCameraScanner(BuildContext context) {
+    BarcodeScannerScreen.scanContinuously(context, onScan: _handleScannedCode);
+  }
+
+  /// "+" tile: with the scanner on, offer single vs. batch entry.
+  void _chooseAddMode(BuildContext context, ProductProvider catalog) {
+    if (!context.read<StoreProvider>().barcodeScannerAvailable) {
+      _openAddProductDialog(context, catalog);
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.slate,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.add_box_outlined, color: AppColors.ledAmber),
+              title: Text('Single product', style: AppTextStyles.body(size: 14, weight: FontWeight.w700)),
+              subtitle: Text('One item, one optional barcode',
+                  style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _openAddProductDialog(context, catalog);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.qr_code_scanner, color: AppColors.ledAmber),
+              title: Text('Batch — scan each unit', style: AppTextStyles.body(size: 14, weight: FontWeight.w700)),
+              subtitle: Text('Same item, every unit has its own barcode',
+                  style: AppTextStyles.body(size: 12, color: AppColors.textMuted)),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _openBatchAddDialog(context, catalog);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openBatchAddDialog(BuildContext context, ProductProvider catalog) {
+    if (catalog.isAtProductLimit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.slate,
+          content: Text(
+            'Product limit reached for your plan (${catalog.productLimit} max). Upgrade to add more products.',
+            style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed),
+          ),
+        ),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (_) => BatchAddProductDialog(
+        existingCategories:
+            catalog.categoryNames.where((c) => c != ProductProvider.uncategorized).toList(),
+        initialCategory: _selectedCategory,
+        barcodeConflict: catalog.barcodeConflict,
+        onSubmit: ({required name, required price, required category, required barcodes}) async {
+          await catalog.addProductWithUnits(
+            name: name,
+            price: price,
+            category: category,
+            barcodes: barcodes,
+          );
+        },
+      ),
+    );
+  }
+
+  void _openAddUnitsDialog(BuildContext context, ProductProvider catalog, Product product) {
+    showDialog(
+      context: context,
+      builder: (_) => BatchAddProductDialog(
+        existingCategories: const [],
+        existingProduct: product,
+        barcodeConflict: catalog.barcodeConflict,
+        onSubmit: ({required name, required price, required category, required barcodes}) async {
+          await catalog.addUnits(product.id, barcodes, staffName: widget.cashierName);
+        },
+      ),
     );
   }
 
@@ -375,6 +583,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              if (context.watch<StoreProvider>().barcodeScannerAvailable)
+                IconButton(
+                  tooltip: 'Scan barcode',
+                  icon: Icon(Icons.qr_code_scanner, color: AppColors.ledAmber),
+                  onPressed: () => _openCameraScanner(context),
+                ),
               CatalogSearchBar(
                 // catalog.products is already the full in-memory list
                 // (same one _filtered() reads) — no separate fetch,
@@ -399,7 +613,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             itemBuilder: (context, index) {
               if (index == products.length) {
-                return AddProductCard(onTap: () => _openAddProductDialog(context, catalog));
+                return AddProductCard(onTap: () => _chooseAddMode(context, catalog));
               }
               final product = products[index];
               return ProductCard(
@@ -439,7 +653,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _selectedCategory = 'All';
     }
 
-    return LayoutBuilder(
+    final scannerOn = context.watch<StoreProvider>().barcodeScannerAvailable;
+
+    return BarcodeKeyboardListener(
+      enabled: scannerOn,
+      onBarcode: _onWedgeScan,
+      child: LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= _wideBreakpoint;
 
@@ -470,6 +689,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ],
         );
       },
+      ),
     );
   }
 }

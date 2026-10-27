@@ -78,7 +78,15 @@ async function revokeLifetime(
     .maybeSingle();
   if (lookupError) throw new Error(`lifetime_purchases lookup failed: ${lookupError.message}`);
   if (!row) {
-    console.error("rtdn-webhook: refunded one-time purchase is not a known Lifetime purchase, skipping");
+    // Not a Lifetime purchase: it may be an AI credit pack. Take those
+    // credits back (never below zero).
+    const { data: revoked, error: revokeError } = await supabase.rpc("revoke_ai_credits", {
+      p_token_hash: await sha256Hex(purchaseToken),
+    });
+    if (revokeError) throw new Error(`revoke_ai_credits failed: ${revokeError.message}`);
+    if (!revoked) {
+      console.error("rtdn-webhook: refunded one-time purchase is not a known Lifetime or AI credit purchase, skipping");
+    }
     return;
   }
 

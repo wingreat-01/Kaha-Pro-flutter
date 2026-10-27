@@ -86,6 +86,14 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     if (pending != null) {
       _blockedByDeviceLabel = pending.label;
       _blockedViaGoogle = pending.viaGoogle;
+      // This is a brand-new screen with empty fields and the default
+      // "Create store" mode -- restore sign-in mode and the credentials
+      // that were just used, otherwise the force button re-signs in
+      // with a blank password and Supabase answers "Invalid login
+      // credentials".
+      _isSignIn = true;
+      if (pending.email != null) _emailCtrl.text = pending.email!;
+      if (pending.password != null) _passwordCtrl.text = pending.password!;
     }
   }
 
@@ -117,7 +125,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
         // A live Supabase session now exists on this device regardless
         // of what happens next -- _claimThisDevice() below is what
         // decides whether it's allowed to stay that way.
-        final claimed = await _claimThisDevice();
+        final claimed = await _claimThisDevice(email: email, password: password);
         if (!claimed) return;
         // Success falls through with no navigation call -- the auth
         // state stream in main.dart picks up the new session.
@@ -157,7 +165,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
         // brand-new account can't already have another device holding
         // a claim, but claiming here still seeds the row so this
         // device is the recorded one from the start.
-        final claimed = await _claimThisDevice();
+        final claimed = await _claimThisDevice(email: email, password: password);
         if (!claimed) return;
         // The auth state stream in main.dart takes it from here.
       }
@@ -277,7 +285,12 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
   /// fall through as a normal successful login). Returns false if it
   /// was refused (caller should return immediately -- _blockedByDeviceLabel
   /// and _loading are already set here).
-  Future<bool> _claimThisDevice({bool force = false, bool viaGoogle = false}) async {
+  Future<bool> _claimThisDevice({
+    bool force = false,
+    bool viaGoogle = false,
+    String? email,
+    String? password,
+  }) async {
     final result = await DeviceSessionService.claim(
       deviceLabel: _deviceLabel(),
       force: force,
@@ -292,6 +305,8 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     DeviceSessionService.setPendingBlock(
       label: result.existingDeviceLabel ?? 'another device',
       viaGoogle: viaGoogle,
+      email: email,
+      password: password,
     );
     await Supabase.instance.client.auth.signOut();
     if (!mounted) return false;
@@ -339,6 +354,13 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
           return;
         }
       } else {
+        if (email.isEmpty || password.isEmpty) {
+          setState(() {
+            _error = 'Enter your email and password, then tap force sign out again.';
+            _loading = false;
+          });
+          return;
+        }
         await Supabase.instance.client.auth.signInWithPassword(email: email, password: password);
       }
       await _claimThisDevice(force: true, viaGoogle: _blockedViaGoogle);

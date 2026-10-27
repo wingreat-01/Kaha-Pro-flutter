@@ -52,6 +52,7 @@ class CartProvider extends ChangeNotifier {
               'productId': item.product.id,
               'variantId': item.selectedVariant?.id,
               'quantity': item.quantity,
+              'unitIds': item.unitIds,
             })
         .toList());
     await prefs.setString(_cartStorageKey, encoded);
@@ -82,6 +83,7 @@ class CartProvider extends ChangeNotifier {
         final productId = map['productId'] as String;
         final variantId = map['variantId'] as String?;
         final quantity = map['quantity'] as int;
+        final unitIds = ((map['unitIds'] as List?) ?? const []).cast<String>().toList();
         if (quantity <= 0) continue;
 
         Product? product;
@@ -104,7 +106,7 @@ class CartProvider extends ChangeNotifier {
           if (variant == null) continue; // size deleted since the cart was saved
         }
 
-        restored.add(CartItem(product: product, selectedVariant: variant)
+        restored.add(CartItem(product: product, selectedVariant: variant, unitIds: unitIds)
           ..quantity = quantity);
       }
 
@@ -132,8 +134,27 @@ class CartProvider extends ChangeNotifier {
     unawaited(_saveToDisk());
   }
 
+  /// Adds one scanned unit of a serialized product (Product.trackUnits).
+  /// Returns false when that exact unit is already in the cart.
+  bool addUnit(Product product, String unitId) {
+    final index = _matchIndex(product.id, null);
+    if (index >= 0) {
+      final item = _items[index];
+      if (item.unitIds.contains(unitId)) return false;
+      item.unitIds.add(unitId);
+      item.quantity += 1;
+    } else {
+      _items.add(CartItem(product: product, unitIds: [unitId]));
+    }
+    notifyListeners();
+    unawaited(_saveToDisk());
+    return true;
+  }
+
   void increment(String productId, {String? variantId}) {
     final index = _matchIndex(productId, variantId);
+    // A serialized line grows only by scanning another unit.
+    if (index >= 0 && _items[index].unitIds.isNotEmpty) return;
     if (index >= 0) {
       _items[index].quantity += 1;
       notifyListeners();
@@ -144,6 +165,7 @@ class CartProvider extends ChangeNotifier {
   void decrement(String productId, {String? variantId}) {
     final index = _matchIndex(productId, variantId);
     if (index < 0) return;
+    if (_items[index].unitIds.isNotEmpty) _items[index].unitIds.removeLast();
     if (_items[index].quantity <= 1) {
       _items.removeAt(index);
     } else {

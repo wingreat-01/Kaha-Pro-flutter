@@ -23,8 +23,21 @@ class DeviceSessionService {
   // StoreSetupScreen reads it once in initState.
   static PendingDeviceBlock? _pendingBlock;
 
-  static void setPendingBlock({required String label, required bool viaGoogle}) {
-    _pendingBlock = PendingDeviceBlock(label: label, viaGoogle: viaGoogle);
+  static void setPendingBlock({
+    required String label,
+    required bool viaGoogle,
+    String? email,
+    String? password,
+  }) {
+    // email/password are held in memory only, read once by the next
+    // StoreSetupScreen (takePendingBlock clears them), so the force
+    // button can re-sign in without the person retyping both fields.
+    _pendingBlock = PendingDeviceBlock(
+      label: label,
+      viaGoogle: viaGoogle,
+      email: email,
+      password: password,
+    );
   }
 
   static PendingDeviceBlock? takePendingBlock() {
@@ -109,5 +122,12 @@ class DeviceClaimResult {
 class PendingDeviceBlock {
   final String label;
   final bool viaGoogle;
-  PendingDeviceBlock({required this.label, required this.viaGoogle});
+  final String? email;
+  final String? password;
+  PendingDeviceBlock({
+    required this.label,
+    required this.viaGoogle,
+    this.email,
+    this.password,
+  });
 }

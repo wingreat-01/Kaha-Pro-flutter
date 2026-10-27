@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'image_source_sheet.dart';
+import 'barcode_scanner_screen.dart';
 import '../models/product.dart';
 import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
@@ -31,7 +32,27 @@ class AddProductDialog extends StatefulWidget {
     String? unitLabel,
     List<({String name, double price, int? stockQty})> variants,
     List<({String ingredientId, double quantityUsed, String? variantKey})> recipeItems,
+    // null = barcode feature is off, leave the product's barcode as-is;
+    // '' = barcode field was left/cleared empty; otherwise the code.
+    String? barcode,
   }) onSubmit;
+
+  /// Show the optional Barcode field (Retail store with the scanner
+  /// switched on — StoreProvider.barcodeScannerAvailable).
+  final bool barcodeEnabled;
+
+  /// Pre-fills the Barcode field when adding (e.g. after scanning a
+  /// code that isn't in the catalog yet).
+  final String? initialBarcode;
+
+  /// Looks up which existing product already owns a barcode, so the
+  /// dialog can reject duplicates before submitting
+  /// (ProductProvider.findByBarcode).
+  final Product? Function(String barcode)? findByBarcode;
+
+  /// Edit mode only, for serialized products: opens the scan-more-units
+  /// dialog (the edit dialog closes first).
+  final VoidCallback? onAddUnits;
 
   /// This store's total-product cap for its plan (ProductProvider.
   /// productLimit) — null means unlimited/unknown, in which case the
@@ -58,6 +79,10 @@ class AddProductDialog extends StatefulWidget {
     this.productLimit,
     this.currentProductCount = 0,
     this.onUpgradeTap,
+    this.barcodeEnabled = false,
+    this.initialBarcode,
+    this.findByBarcode,
+    this.onAddUnits,
   });
 
   @override
@@ -69,6 +94,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   final _priceCtrl = TextEditingController();
   final _emojiCtrl = TextEditingController();
   final _newCategoryCtrl = TextEditingController();
+  final _barcodeCtrl = TextEditingController();
 
   String? _selectedCategory;
   bool _addingNewCategory = false;
@@ -104,6 +130,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
       _trackStock = editing.trackStock;
       _unit = kProductUnits.contains(editing.unit) ? editing.unit : 'pc';
       _unitLabelCtrl.text = editing.unitLabel ?? '';
+      _barcodeCtrl.text = editing.barcode ?? '';
+    } else if (widget.initialBarcode != null) {
+      _barcodeCtrl.text = widget.initialBarcode!;
     }
 
     final initial = widget.initialCategory ?? editing?.category;
@@ -134,7 +163,17 @@ class _AddProductDialogState extends State<AddProductDialog> {
     _emojiCtrl.dispose();
     _newCategoryCtrl.dispose();
     _unitLabelCtrl.dispose();
+    _barcodeCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _scanBarcode() async {
+    final code = await BarcodeScannerScreen.scanOnce(context);
+    if (code == null || !mounted) return;
+    setState(() {
+      _barcodeCtrl.text = code;
+      _error = null;
+    });
   }
 
   Future<void> _pickImage() async {
@@ -180,6 +219,14 @@ class _AddProductDialogState extends State<AddProductDialog> {
       setState(() => _error = 'Enter a name for the custom unit.');
       return;
     }
+    final barcode = widget.barcodeEnabled ? _barcodeCtrl.text.trim() : null;
+    if (barcode != null && barcode.isNotEmpty && widget.findByBarcode != null) {
+      final owner = widget.findByBarcode!(barcode);
+      if (owner != null && owner.id != widget.editingProduct?.id) {
+        setState(() => _error = 'Barcode already used by "${owner.name}".');
+        return;
+      }
+    }
 
     widget.onSubmit(
       name: name,
@@ -198,6 +245,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                   (v) => (name: v.name, price: v.price, stockQty: null))
               .toList(),
       recipeItems: _draftRecipeItems,
+      barcode: barcode,
     );
     Navigator.of(context).pop();
   }
@@ -247,6 +295,34 @@ class _AddProductDialogState extends State<AddProductDialog> {
               _field('Name', _nameCtrl, hint: 'e.g. Bottled Water'),
               const SizedBox(height: 14),
               _field('Price', _priceCtrl, hint: context.moneyHint, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+              if (widget.barcodeEnabled) ...[
+                const SizedBox(height: 14),
+                Text('Barcode (optional)', style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _barcodeCtrl,
+                  style: AppTextStyles.body(size: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Scan with the camera or a barcode scanner',
+                    suffixIcon: IconButton(
+                      tooltip: 'Scan with camera',
+                      icon: Icon(Icons.qr_code_scanner, color: AppColors.ledAmber),
+                      onPressed: _scanBarcode,
+                    ),
+                  ),
+                ),
+              ],
+              if (_isEditing && widget.onAddUnits != null) ...[
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onAddUnits!();
+                  },
+                  icon: Icon(Icons.add_box_outlined, size: 18, color: AppColors.ledAmber),
+                  label: const Text('Add units (scan)'),
+                ),
+              ],
               const SizedBox(height: 14),
               _field('Emoji (optional)', _emojiCtrl, hint: '🛒'),
               const SizedBox(height: 14),

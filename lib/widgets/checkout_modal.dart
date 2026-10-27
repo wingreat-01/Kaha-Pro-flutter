@@ -309,6 +309,15 @@ class _CheckoutModalState extends State<CheckoutModal> {
         // Swallowed deliberately — see note above.
       }
 
+      // Serialized items (each unit has its own barcode): mark the exact
+      // scanned units as sold. markUnitsSold queues them for retry itself
+      // if the server can't be reached.
+      try {
+        await context.read<ProductProvider>().markUnitsSold(
+              [for (final item in soldItems) ...item.unitIds],
+            );
+      } catch (_) {}
+
       // Recipe-based ingredient deduction (Step 5) — same
       // fire-and-catch reasoning as the product stock deduction just
       // above: if this sale is queued offline, there's no recipe data

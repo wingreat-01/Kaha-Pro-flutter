@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/product_unit.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
 import '../models/product_stock_movement.dart';
@@ -31,6 +33,17 @@ class ProductLimitExceededException implements Exception {
   String toString() => message;
 }
 
+/// Thrown when a barcode is already assigned to another product in the
+/// same store — caught locally first, or surfaced from the
+/// products_store_barcode_key unique index (errcode 23505).
+class DuplicateBarcodeException implements Exception {
+  final String message;
+  const DuplicateBarcodeException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class ProductProvider extends ChangeNotifier {
   static const String uncategorized = 'Uncategorized';
   static const String _imageBucket = 'product-images';
@@ -51,6 +64,12 @@ class ProductProvider extends ChangeNotifier {
 
   List<Product> _products = [];
   final List<String> _categoryNames = [];
+
+  // Serialized units (Product.trackUnits). Only in-stock units are kept,
+  // keyed by Product.normalizeBarcode(barcode).
+  static const String _pendingSoldKey = 'merq_pending_sold_units';
+  final Map<String, ProductUnit> _unitsByCode = {};
+  final Set<String> _soldCodes = {}; // sold this session, for a clear message
 
   /// Null until [loadFromSupabase] fetches it, or if that fetch fails.
   /// Treated as "unknown" rather than defaulting to 'free', so a fetch
@@ -82,6 +101,24 @@ class ProductProvider extends ChangeNotifier {
   List<String> get categoryNames => List.unmodifiable(_categoryNames);
 
   List<String> get categories => ['All', ..._categoryNames];
+
+  /// The product whose barcode matches [raw] (scanned or typed), or
+  /// null. Compared via [Product.normalizeBarcode] so UPC-A/EAN-13
+  /// leading-zero differences still match.
+  Product? findByBarcode(String raw) {
+    final wanted = Product.normalizeBarcode(raw);
+    if (wanted.isEmpty) return null;
+    for (final p in _products) {
+      final b = p.barcode;
+      if (b != null && Product.normalizeBarcode(b) == wanted) return p;
+    }
+    return null;
+  }
+
+  static String? _cleanBarcode(String? raw) {
+    final t = raw?.trim();
+    return (t == null || t.isEmpty) ? null : t;
+  }
 
   int productCountForCategory(String name) {
     return _products.where((p) => p.category == name).length;
@@ -192,6 +229,8 @@ class ProductProvider extends ChangeNotifier {
           .map((row) => _productFromRow(row as Map<String, dynamic>))
           .toList();
 
+      await _loadUnits();
+
       isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -226,6 +265,8 @@ class ProductProvider extends ChangeNotifier {
       costPerUnit: (row['cost_per_unit'] as num?)?.toDouble(),
       variants: variants,
       showOnQrMenu: row['show_on_qr_menu'] as bool? ?? true,
+      barcode: row['barcode'] as String?,
+      trackUnits: row['track_units'] as bool? ?? false,
     );
   }
 
@@ -335,7 +376,15 @@ class ProductProvider extends ChangeNotifier {
     bool trackStock = false,
     String unit = 'pc',
     String? unitLabel,
+    String? barcode,
+    bool trackUnits = false,
   }) async {
+    final cleanBarcode = _cleanBarcode(barcode);
+    if (cleanBarcode != null) {
+      final conflict = barcodeConflict(cleanBarcode);
+      if (conflict != null) throw DuplicateBarcodeException(conflict);
+    }
+
     // Local pre-check — catches the common case instantly, no network
     // round trip, and avoids creating a new category (addCategory
     // below) for a product that's about to be rejected anyway. Not
@@ -370,6 +419,8 @@ class ProductProvider extends ChangeNotifier {
             'track_stock': trackStock,
             'unit': unit,
             'unit_label': (unitLabel == null || unitLabel.trim().isEmpty) ? null : unitLabel.trim(),
+            'barcode': cleanBarcode,
+            'track_units': trackUnits,
           })
           .select()
           .single();
@@ -411,6 +462,8 @@ class ProductProvider extends ChangeNotifier {
         trackStock: trackStock,
         unit: unit,
         unitLabel: (unitLabel == null || unitLabel.trim().isEmpty) ? null : unitLabel.trim(),
+        barcode: cleanBarcode,
+        trackUnits: trackUnits,
       ));
       notifyListeners();
       return newId;
@@ -421,6 +474,9 @@ class ProductProvider extends ChangeNotifier {
       // the gap between the check and this request landing.
       if (e is PostgrestException && e.code == 'P0001') {
         throw ProductLimitExceededException(e.message);
+      }
+      if (e is PostgrestException && e.code == '23505' && e.message.contains('barcode')) {
+        throw const DuplicateBarcodeException('That barcode is already used by another product.');
       }
       rethrow;
     }
@@ -470,6 +526,8 @@ class ProductProvider extends ChangeNotifier {
       costPerUnit: previous.costPerUnit,
       variants: previous.variants,
       showOnQrMenu: previous.showOnQrMenu,
+      barcode: previous.barcode,
+      trackUnits: previous.trackUnits,
     );
     notifyListeners();
 
@@ -540,6 +598,7 @@ class ProductProvider extends ChangeNotifier {
         throw ProductDeleteException(
             "The database didn't allow deleting this product.");
       }
+      _unitsByCode.removeWhere((_, u) => u.productId == id);
     } on ProductDeleteException {
       rollback();
       rethrow;
@@ -1058,6 +1117,245 @@ class ProductProvider extends ChangeNotifier {
     } catch (e) {
       _products[index] = previous;
       notifyListeners();
+      rethrow;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Serialized units (every physical unit has its own barcode)
+  // ------------------------------------------------------------------
+
+  Product? productById(String id) {
+    for (final p in _products) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
+  /// The in-stock unit with this barcode, or null.
+  ProductUnit? findUnitByBarcode(String raw) =>
+      _unitsByCode[Product.normalizeBarcode(raw)];
+
+  /// True when this barcode belonged to a unit sold earlier this session.
+  bool wasUnitSold(String raw) => _soldCodes.contains(Product.normalizeBarcode(raw));
+
+  int unitCountFor(String productId) =>
+      _unitsByCode.values.where((u) => u.productId == productId).length;
+
+  /// A ready-to-show message when [raw] is already taken by a product or
+  /// a unit, else null.
+  String? barcodeConflict(String raw) {
+    final p = findByBarcode(raw);
+    if (p != null) return 'Barcode already used by "${p.name}".';
+    final u = findUnitByBarcode(raw);
+    if (u != null) {
+      return 'Barcode already used by a unit of "${productById(u.productId)?.name ?? 'another product'}".';
+    }
+    if (wasUnitSold(raw)) return 'That barcode belongs to a unit that was already sold.';
+    return null;
+  }
+
+  List<String> _cleanUnitCodes(List<String> raw) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final r in raw) {
+      final t = r.trim();
+      if (t.isEmpty) continue;
+      if (seen.add(Product.normalizeBarcode(t))) out.add(t);
+    }
+    return out;
+  }
+
+  Future<Set<String>> _readPendingSold() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_pendingSoldKey) ?? const <String>[]).toSet();
+  }
+
+  Future<void> _writePendingSold(Set<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_pendingSoldKey, ids.toList());
+  }
+
+  Future<void> _flushPendingSoldUnits() async {
+    final ids = await _readPendingSold();
+    if (ids.isEmpty) return;
+    await _client.from('product_units').update({
+      'status': 'sold',
+      'sold_at': DateTime.now().toUtc().toIso8601String(),
+    }).inFilter('id', ids.toList());
+    await _writePendingSold({});
+  }
+
+  /// Loads every in-stock unit (paged, since Supabase caps a response at
+  /// 1000 rows). Never throws — a failure just leaves unit scanning
+  /// empty this session, it must not block login.
+  Future<void> _loadUnits() async {
+    _unitsByCode.clear();
+    try {
+      try {
+        await _flushPendingSoldUnits(); // retry sales that couldn't be saved offline
+      } catch (e) {
+        debugPrint('flush pending sold units failed: $e');
+      }
+      final pending = await _readPendingSold();
+      const pageSize = 1000;
+      var from = 0;
+      while (true) {
+        final rows = await _client
+            .from('product_units')
+            .select('id, product_id, barcode')
+            .eq('status', 'in_stock')
+            .order('id')
+            .range(from, from + pageSize - 1);
+        final list = rows as List;
+        for (final r in list) {
+          final u = ProductUnit.fromRow(r as Map<String, dynamic>);
+          if (pending.contains(u.id)) continue;
+          _unitsByCode[Product.normalizeBarcode(u.barcode)] = u;
+        }
+        if (list.length < pageSize) break;
+        from += pageSize;
+      }
+    } catch (e) {
+      debugPrint('loadUnits failed: $e');
+    }
+  }
+
+  Future<void> _insertUnits(String productId, List<String> codes) async {
+    try {
+      final rows = await _client
+          .from('product_units')
+          .insert([
+            for (final c in codes) {'product_id': productId, 'barcode': c},
+          ])
+          .select('id, product_id, barcode');
+      for (final r in rows as List) {
+        final u = ProductUnit.fromRow(r as Map<String, dynamic>);
+        _unitsByCode[Product.normalizeBarcode(u.barcode)] = u;
+      }
+      notifyListeners();
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        throw const DuplicateBarcodeException('One of those barcodes is already in use.');
+      }
+      rethrow;
+    }
+  }
+
+  /// Creates one product whose stock is the given units, each with its own
+  /// barcode (e.g. 10 drills). Returns the new product's id.
+  Future<String> addProductWithUnits({
+    required String name,
+    required double price,
+    required String category,
+    required List<String> barcodes,
+  }) async {
+    final codes = _cleanUnitCodes(barcodes);
+    if (codes.isEmpty) throw StateError('No units to add');
+    for (final c in codes) {
+      final conflict = barcodeConflict(c);
+      if (conflict != null) throw DuplicateBarcodeException(conflict);
+    }
+
+    final productId = await addProduct(
+      name: name,
+      price: price,
+      category: category,
+      trackStock: true,
+      stockQty: codes.length,
+      trackUnits: true,
+    );
+    try {
+      await _insertUnits(productId, codes);
+    } catch (e) {
+      // Don't leave a product claiming stock it has no units for.
+      try {
+        await removeProduct(productId);
+      } catch (_) {}
+      rethrow;
+    }
+    return productId;
+  }
+
+  /// Receives more units for a product that already tracks units, and
+  /// raises its stock count by the same number.
+  Future<void> addUnits(String productId, List<String> barcodes, {String? staffName}) async {
+    final codes = _cleanUnitCodes(barcodes);
+    if (codes.isEmpty) return;
+    for (final c in codes) {
+      final conflict = barcodeConflict(c);
+      if (conflict != null) throw DuplicateBarcodeException(conflict);
+    }
+    await _insertUnits(productId, codes);
+    await adjustStock(
+      productId,
+      codes.length,
+      reason: 'Units received (scanned)',
+      staffName: staffName,
+    );
+  }
+
+  /// Marks units as sold once a sale has been recorded. Updated locally
+  /// at once (so the same unit can't be sold twice), then on the server;
+  /// if the server write fails (offline) the ids are kept on the device
+  /// and retried the next time the catalog loads.
+  Future<void> markUnitsSold(List<String> unitIds) async {
+    if (unitIds.isEmpty) return;
+    final ids = unitIds.toSet();
+    _unitsByCode.removeWhere((code, u) {
+      if (!ids.contains(u.id)) return false;
+      _soldCodes.add(code);
+      return true;
+    });
+    notifyListeners();
+
+    try {
+      await _client.from('product_units').update({
+        'status': 'sold',
+        'sold_at': DateTime.now().toUtc().toIso8601String(),
+      }).inFilter('id', ids.toList());
+    } catch (e) {
+      debugPrint('markUnitsSold failed, queued for retry: $e');
+      final pending = await _readPendingSold();
+      await _writePendingSold({...pending, ...ids});
+    }
+  }
+
+  /// Sets or clears (null/blank) a product's barcode. Optimistic with
+  /// rollback, like [setCostPerUnit]. Throws [DuplicateBarcodeException]
+  /// if another product in this store already has that barcode.
+  Future<void> setBarcode(String id, String? barcode) async {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index < 0) return;
+    final previous = _products[index];
+    final clean = _cleanBarcode(barcode);
+    if (previous.barcode == clean) return;
+
+    if (clean != null) {
+      final clash = findByBarcode(clean);
+      if (clash != null && clash.id != id) {
+        throw DuplicateBarcodeException('Barcode already used by "${clash.name}".');
+      }
+      if (findUnitByBarcode(clean) != null) {
+        throw DuplicateBarcodeException(barcodeConflict(clean)!);
+      }
+    }
+
+    _products[index] = previous.copyWith(barcode: clean, clearBarcode: clean == null);
+    notifyListeners();
+
+    try {
+      final updated =
+          await _client.from('products').update({'barcode': clean}).eq('id', id).select();
+      if ((updated as List).isEmpty) {
+        throw StateError('barcode update matched no rows (RLS?) for product $id');
+      }
+    } catch (e) {
+      _products[index] = previous;
+      notifyListeners();
+      if (e is PostgrestException && e.code == '23505') {
+        throw const DuplicateBarcodeException('That barcode is already used by another product.');
+      }
       rethrow;
     }
   }

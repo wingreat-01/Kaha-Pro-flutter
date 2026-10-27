@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../state/ai_assistant_provider.dart';
 import '../state/store_provider.dart';
+import '../state/billing_provider.dart';
 import '../state/product_provider.dart';
 import '../state/ingredient_provider.dart';
 import '../widgets/bounded_content.dart';
@@ -30,6 +32,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _inputFocus = FocusNode();
+  String? _lastBillingError;
+
+  Future<void> _buyCredits() async {
+    final billing = context.read<BillingProvider>();
+    final storeProvider = context.read<StoreProvider>();
+    billing.onPlanActivated = () => storeProvider.loadFromSupabase();
+    if (billing.products[kAiCreditsProductId] == null) {
+      await billing.init();
+    }
+    if (!mounted) return;
+    await billing.buyAiCredits();
+  }
 
   @override
   void initState() {
@@ -83,7 +97,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     }
 
     if (creditsRemaining != null && mounted) {
-      context.read<StoreProvider>().setAiCreditsRemaining(creditsRemaining);
+      unawaited(context.read<StoreProvider>().refreshAiCredits());
       // The AI Assistant's edge function can add/update/withdraw products
       // directly against Supabase, bypassing every method on
       // ProductProvider -- which only fetches once on login and never
@@ -108,16 +122,31 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final chat = context.watch<AiAssistantProvider>();
     final store = context.watch<StoreProvider>().store;
     final canSend = store == null || store.canUseAiAssistant;
-    // Lifetime has no AI credits (not included in that plan).
-    final lifetimeNoAi =
-        store != null && store.plan == 'lifetime' && store.aiCreditsRemaining == 0;
+    // Lifetime has no monthly AI credits; it only uses purchased packs.
+    final isLifetime = store != null && store.plan == 'lifetime';
+    final lifetimeNoAi = isLifetime && store.totalAiCredits == 0;
+    final billing = context.watch<BillingProvider>();
+    final billingError = billing.purchaseError;
+    if (isLifetime && billingError != null && billingError != _lastBillingError) {
+      _lastBillingError = billingError;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(billingError)));
+        }
+      });
+    } else if (billingError == null) {
+      _lastBillingError = null;
+    }
     final creditsLabel = store == null
         ? null
-        : lifetimeNoAi
-            ? 'Not included in the Lifetime plan'
+        : isLifetime
+            ? (store.aiCreditsBonus > 0
+                ? '${store.aiCreditsBonus} purchased credit${store.aiCreditsBonus == 1 ? '' : 's'} left'
+                : 'No AI credits · buy a pack to use it')
             : store.isExpired
-            ? 'Trial expired · upgrade to continue'
-            : '${store.aiCreditsRemaining} credit${store.aiCreditsRemaining == 1 ? '' : 's'} left this month';
+                ? 'Trial expired · upgrade to continue'
+                : '${store.aiCreditsRemaining} credit${store.aiCreditsRemaining == 1 ? '' : 's'} left this month'
+                    '${store.aiCreditsBonus > 0 ? ' + ${store.aiCreditsBonus} purchased' : ''}';
 
     return Container(
       color: AppColors.charcoal,
@@ -149,12 +178,31 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       style: AppTextStyles.mono(
                         size: 11,
                         weight: FontWeight.w600,
-                        color: (store!.isExpired || store.aiCreditsRemaining == 0)
+                        color: (store!.isExpired || store.totalAiCredits == 0)
                             ? AppColors.ledgerRed
                             : AppColors.textMuted,
                       ),
                     ),
                   ),
+                if (isLifetime && !kIsWeb) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: billing.purchaseInProgress ? null : _buyCredits,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Buy 50 · ${billing.products[kAiCreditsProductId]?.price ?? '₱60'}',
+                      style: AppTextStyles.mono(
+                        size: 11,
+                        weight: FontWeight.w700,
+                        color: AppColors.ledAmber,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -197,7 +245,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     disabledHint: store == null
                         ? null
                         : lifetimeNoAi
-                            ? 'The AI assistant is not included in Lifetime'
+                            ? 'Buy AI credits to use the assistant'
                             : store.isExpired
                             ? 'Upgrade your plan to keep using the assistant'
                             : 'Out of credits — resets next cycle',

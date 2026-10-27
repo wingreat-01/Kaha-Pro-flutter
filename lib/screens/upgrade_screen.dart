@@ -1,10 +1,20 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../state/store_provider.dart';
 import '../state/billing_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bounded_content.dart';
+
+/// Play Store listing for MERQ -- web can't run Play Billing, so the web
+/// plan screen sends people here to upgrade.
+const String _kPlayStoreUrl =
+    'https://play.google.com/store/apps/details?id=com.prohubapps.merq';
+
+Future<void> _openPlayStore() async {
+  await launchUrl(Uri.parse(_kPlayStoreUrl), mode: LaunchMode.externalApplication);
+}
 
 /// Static plan matrix, mirrors kahapro-subscription-plan.md's Free/
 /// Starter/Basic/Pro table. Deliberately hardcoded here rather than
@@ -327,9 +337,20 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                   color: AppColors.textMuted.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  'Upgrading is available in the MERQ Android app.',
-                  style: AppTextStyles.body(size: 13, weight: FontWeight.w600, color: AppColors.textSecondary),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Upgrading is available in the MERQ Android app.',
+                      style: AppTextStyles.body(size: 13, weight: FontWeight.w600, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: _openPlayStore,
+                      icon: const Icon(Icons.shop, size: 16),
+                      label: Text('Get MERQ on Google Play', style: AppTextStyles.body(size: 13, weight: FontWeight.w700)),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -495,9 +516,15 @@ class _PlanCard extends StatelessWidget {
             // No Play Billing equivalent exists on web -- showing a
             // disabled/dead Choose button would look broken rather
             // than explain why nothing happens when tapped.
-            Text(
-              'Available in the Android app',
-              style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _openPlayStore,
+                child: Text(
+                  'Available in the Android app — Get it on Google Play',
+                  style: AppTextStyles.body(size: 12, weight: FontWeight.w700, color: AppColors.ledAmber),
+                ),
+              ),
             )
           else
             SizedBox(

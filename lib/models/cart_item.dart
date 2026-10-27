@@ -7,8 +7,16 @@ class CartItem {
   // true. Null for every product without sizes — unchanged behavior.
   final ProductVariant? selectedVariant;
   int quantity;
+  // Serialized products (Product.trackUnits): ids of the exact units
+  // that were scanned into this line. Empty for ordinary lines.
+  final List<String> unitIds;
 
-  CartItem({required this.product, this.selectedVariant, this.quantity = 1});
+  CartItem({
+    required this.product,
+    this.selectedVariant,
+    this.quantity = 1,
+    List<String>? unitIds,
+  }) : unitIds = unitIds ?? [];
 
   // Variant price wins when one was picked; otherwise the product's
   // own flat price, exactly as before variants existed.
