@@ -207,7 +207,10 @@ class _InventoryMovementsPanelState extends State<InventoryMovementsPanel>
             quantity: item.quantity.toDouble(),
             unit: _normalizeUnit(product.unitDisplay),
             type: MovementType.withdrawal,
-            reason: 'Sale',
+            // A voided sale's stock comes back as its own "Void" row
+            // (product_stock_movements), so the original deduction
+            // stays listed — just labelled.
+            reason: t.isVoided ? 'Sale (voided)' : 'Sale',
             reference: _clean(t.transactionNumber),
             user: _clean(t.cashierName),
           ));

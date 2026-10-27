@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/transaction.dart';
+import '../models/user.dart';
 import '../state/transaction_provider.dart';
 import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
@@ -17,7 +18,10 @@ import 'transaction_detail_modal.dart';
 /// its product was deleted before it could sync) doesn't have to sit
 /// there retrying forever with no way out.
 class TransactionsPanel extends StatefulWidget {
-  const TransactionsPanel({super.key});
+  // Logged-in staff member, passed through to the detail view's Void
+  // sale action (admin) / Request void (cashier).
+  final AppUser? currentUser;
+  const TransactionsPanel({super.key, this.currentUser});
 
   @override
   State<TransactionsPanel> createState() => _TransactionsPanelState();
@@ -158,7 +162,10 @@ class _TransactionsPanelState extends State<TransactionsPanel> {
                                         onTap: () => showDialog(
                                           context: context,
                                           barrierColor: Colors.black54,
-                                          builder: (_) => TransactionDetailModal(transaction: txn),
+                                          builder: (_) => TransactionDetailModal(
+                                            transaction: txn,
+                                            currentUser: widget.currentUser,
+                                          ),
                                         ),
                                         onDiscard: txn.isPending ? () => _confirmDiscard(context, txn) : null,
                                       ),
@@ -254,7 +261,8 @@ class _DaySummaryHeader extends StatelessWidget {
               ),
             ),
             Text(
-              '${summary.saleCount} sale${summary.saleCount == 1 ? '' : 's'} · ${summary.itemsSold} item${summary.itemsSold == 1 ? '' : 's'}  ',
+              '${summary.saleCount} sale${summary.saleCount == 1 ? '' : 's'} · ${summary.itemsSold} item${summary.itemsSold == 1 ? '' : 's'}'
+              '${summary.voidCount > 0 ? ' · ${summary.voidCount} void${summary.voidCount == 1 ? '' : 's'}' : ''}  ',
               style: AppTextStyles.body(size: 12, color: AppColors.textMuted),
             ),
             Text(
@@ -289,6 +297,7 @@ class _TransactionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPending = transaction.isPending;
+    final isVoided = transaction.isVoided;
     // "10:32 AM · GCash" -- the payment method's name is looked up
     // from the payment_methods table, so it's blank on old sales
     // recorded before payment methods existed, or whose method was
@@ -328,9 +337,31 @@ class _TransactionRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${transaction.itemCount} item${transaction.itemCount == 1 ? '' : 's'}',
-                    style: AppTextStyles.body(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary),
+                  Row(
+                    children: [
+                      Text(
+                        '${transaction.itemCount} item${transaction.itemCount == 1 ? '' : 's'}',
+                        style: AppTextStyles.body(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: isVoided ? AppColors.textMuted : AppColors.textPrimary,
+                        ),
+                      ),
+                      if (isVoided) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.ledgerRed.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'VOID',
+                            style: AppTextStyles.mono(size: 9.5, weight: FontWeight.w700, color: AppColors.ledgerRed),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -343,7 +374,11 @@ class _TransactionRow extends StatelessWidget {
             ),
             Text(
               context.money(transaction.total),
-              style: AppTextStyles.mono(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary),
+              style: AppTextStyles.mono(
+                size: 15,
+                weight: FontWeight.w700,
+                color: isVoided ? AppColors.textMuted : AppColors.textPrimary,
+              ).copyWith(decoration: isVoided ? TextDecoration.lineThrough : null),
             ),
             const SizedBox(width: 6),
             if (onDiscard != null)

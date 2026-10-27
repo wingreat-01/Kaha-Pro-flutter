@@ -20,6 +20,8 @@ import '../state/ingredient_provider.dart';
 import '../state/recipe_provider.dart';
 import '../state/store_provider.dart';
 import '../state/incoming_order_provider.dart';
+import '../state/tour_provider.dart';
+import '../widgets/guided_tour_overlay.dart';
 
 enum _Section { register, incoming, transactions, reports, assistant, settings }
 
@@ -81,6 +83,16 @@ class _HomeShellState extends State<HomeShell> {
       _newOrderSub?.cancel();
       _newOrderSub = _incomingOrders!.newOrders.listen(_onNewOrders);
       _incomingOrders!.start();
+      // login_screen.dart awaits the catalog load before HomeShell
+      // mounts, so an empty catalog here really is a brand-new store.
+      if (_isAdmin) {
+        final catalog = context.read<ProductProvider>();
+        context.read<TourProvider>().maybeAutoStart(
+              isNewStore: catalog.loadError == null &&
+                  catalog.categoryNames.isEmpty &&
+                  catalog.products.isEmpty,
+            );
+      }
     });
   }
 
@@ -168,13 +180,13 @@ class _HomeShellState extends State<HomeShell> {
   Widget _body() {
     switch (_section) {
       case _Section.register:
-        return RegisterScreen(cashierName: widget.user.name);
+        return RegisterScreen(cashierName: widget.user.name, isAdmin: _isAdmin);
       case _Section.incoming:
         return QrOrderingGate(
           child: IncomingOrdersPanel(cashierName: widget.user.name),
         );
       case _Section.transactions:
-        return const TransactionsPanel();
+        return TransactionsPanel(currentUser: widget.user);
       case _Section.reports:
         // Defensive fallback — same reasoning as settings below: the
         // header icon that sets this is hidden entirely for
@@ -278,12 +290,15 @@ class _HomeShellState extends State<HomeShell> {
     // A numeric badge would misleadingly imply "3 things pending"
     // when there's really just one ongoing condition to notice.
     bool showWarningDot = false,
+    // Guided-tour spotlight target (see TourKeys).
+    GlobalKey? tourKey,
   }) {
-    final button = IconButton(
+    Widget button = IconButton(
       icon: Icon(icon, color: isActive ? AppColors.ledAmber : AppColors.textSecondary),
       tooltip: tooltip,
       onPressed: onTap,
     );
+    if (tourKey != null) button = KeyedSubtree(key: tourKey, child: button);
     if (badgeCount <= 0 && !showWarningDot) return button;
 
     // A queued-but-unsynced sale count on the Transactions icon — the
@@ -381,7 +396,11 @@ class _HomeShellState extends State<HomeShell> {
         if (didPop) return;
         setState(() => _section = _Section.register);
       },
-      child: Scaffold(
+      // Stack so the guided-tour layer covers the header icons too, not
+      // just the body.
+      child: Stack(
+      children: [
+      Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
         backgroundColor: AppColors.slate,
@@ -402,7 +421,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icons.point_of_sale_outlined,
             tooltip: 'Register',
             isActive: _section == _Section.register,
-            onTap: () => setState(() => _section = _Section.register),
+            onTap: () {
+              setState(() => _section = _Section.register);
+              context.read<TourProvider>().advanceFrom(TourStep.openRegister);
+            },
+            tourKey: TourKeys.registerIcon,
           ),
           _headerIcon(
             icon: Icons.room_service_outlined,
@@ -442,8 +465,12 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icons.settings_outlined,
               tooltip: settingsTooltip,
               isActive: _section == _Section.settings,
-              onTap: () => setState(() => _section = _Section.settings),
+              onTap: () {
+                setState(() => _section = _Section.settings);
+                context.read<TourProvider>().advanceFrom(TourStep.openSettings);
+              },
               showWarningDot: planNeedsAttention,
+              tourKey: TourKeys.settingsIcon,
             ),
           if (_isAdmin)
             // Admins get both options, kept visually and functionally
@@ -486,6 +513,16 @@ class _HomeShellState extends State<HomeShell> {
           const CheckoutWarmup(),
         ],
       ),
+      ),
+      // Categories' own steps run in CategoriesPanel's route instead.
+      const GuidedTourLayer(steps: {
+        TourStep.openSettings,
+        TourStep.openCategories,
+        TourStep.openRegister,
+        TourStep.addProduct,
+        TourStep.checkout,
+      }),
+      ],
       ),
     );
   }

@@ -291,4 +291,38 @@ class IngredientProvider extends ChangeNotifier {
       }
     }
   }
+
+  /// Reverse of [deductStockForSale] for a voided sale: adds
+  /// [restock] ({ingredientId: quantity}, from
+  /// RecipeProvider.computeDeductionsForLineItems) back and logs each as
+  /// source 'void' (allowed by 20261027_028_void_transactions.sql).
+  ///
+  /// Uses the product's CURRENT recipe, same as the sale-time deduction
+  /// does — a recipe edited between the sale and the void returns the
+  /// new amounts, not the ones originally taken.
+  Future<void> restockForVoid(
+    Map<String, double> restock, {
+    String? reference,
+    String? staffName,
+  }) async {
+    for (final entry in restock.entries) {
+      final index = _ingredients.indexWhere((i) => i.id == entry.key);
+      if (index < 0) continue;
+      final next = _ingredients[index].stockQuantity + entry.value;
+      await _writeStock(entry.key, index, next);
+
+      try {
+        await _client.from('ingredient_stock_movements').insert({
+          'ingredient_id': entry.key,
+          'delta': entry.value,
+          'reason': 'Void',
+          'staff_name': staffName,
+          'reference': reference,
+          'source': 'void',
+        });
+      } catch (_) {
+        // Swallowed deliberately -- same as deductStockForSale.
+      }
+    }
+  }
 }

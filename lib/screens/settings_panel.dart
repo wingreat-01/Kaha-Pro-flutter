@@ -6,6 +6,7 @@ import '../state/ingredient_provider.dart';
 import '../state/receipt_options_provider.dart';
 import '../state/store_provider.dart';
 import '../state/theme_provider.dart';
+import '../state/tour_provider.dart';
 import 'ingredients_panel.dart';
 import 'inventory_movements_panel.dart';
 import 'inventory_panel.dart';
@@ -155,12 +156,18 @@ class SettingsPanel extends StatelessWidget {
             ),
           ),
         ),
-        _SettingsRow(
-          icon: Icons.category_outlined,
-          label: 'Categories',
-          subtitle: 'Edit product categories',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CategoriesPanel()),
+        KeyedSubtree(
+          key: TourKeys.categoriesRow,
+          child: _SettingsRow(
+            icon: Icons.category_outlined,
+            label: 'Categories',
+            subtitle: 'Edit product categories',
+            onTap: () {
+              context.read<TourProvider>().advanceFrom(TourStep.openCategories);
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CategoriesPanel()),
+              );
+            },
           ),
         ),
         _SettingsRow(

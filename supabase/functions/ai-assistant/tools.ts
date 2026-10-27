@@ -13,7 +13,8 @@
 //                              source NOT NULL, CHECK source in ('manual','sale'),
 //                              created_at)
 //   transactions(id, store_id, transaction_number, total,
-//                cash_tendered, change_amount, cashier_name, created_at)
+//                cash_tendered, change_amount, cashier_name, created_at,
+//                status ('completed' | 'voided'), voided_at, ...)
 //   categories(id, name, ...) -- resolved by name via resolveCategoryId
 //
 // Still unverified (flagged inline): transaction_line_items beyond
@@ -392,7 +393,8 @@ export async function executeTool(
         .from('transactions')
         .select('id, transaction_number, total, cash_tendered, change_amount, cashier_name, created_at')
         .gte('created_at', start_date)
-        .lte('created_at', `${end_date}T23:59:59`);
+        .lte('created_at', `${end_date}T23:59:59`)
+        .neq('status', 'voided'); // voided sales never count (20261027_028)
       if (error) return { error: error.message };
 
       // Pre-aggregate by calendar day, including days with zero sales,
@@ -441,7 +443,8 @@ export async function executeTool(
         .from('transactions')
         .select('id')
         .gte('created_at', start_date)
-        .lte('created_at', `${end_date}T23:59:59`);
+        .lte('created_at', `${end_date}T23:59:59`)
+        .neq('status', 'voided');
       if (txErr) return { error: txErr.message };
       if (!txs?.length) return { best_sellers: [] };
 
@@ -490,7 +493,8 @@ export async function executeTool(
           .from('transactions')
           .select('total')
           .gte('created_at', start)
-          .lte('created_at', `${end}T23:59:59`);
+          .lte('created_at', `${end}T23:59:59`)
+          .neq('status', 'voided');
         if (error) return { error: error.message };
         const total = (data ?? []).reduce((sum, r: any) => sum + (r.total ?? 0), 0);
         return { total, count: data?.length ?? 0 };

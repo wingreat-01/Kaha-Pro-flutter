@@ -63,9 +63,12 @@ class TransactionProvider extends ChangeNotifier {
   /// single-day report, which is what ReportsScreen's presets already
   /// build.
   SalesReport reportFor(DateTimeRange range) {
-    final inRange = _transactions
-        .where((t) => !t.timestamp.isBefore(range.start) && !t.timestamp.isAfter(range.end))
-        .toList();
+    final allInRange = _transactions
+        .where((t) => !t.timestamp.isBefore(range.start) && !t.timestamp.isAfter(range.end));
+    // Voided sales never count toward revenue/items/cashier figures —
+    // only toward the separate void tally.
+    final inRange = allInRange.where((t) => !t.isVoided).toList();
+    final voided = allInRange.where((t) => t.isVoided).toList();
 
     double totalRevenue = 0;
     int itemsSold = 0;
@@ -130,7 +133,59 @@ class TransactionProvider extends ChangeNotifier {
       itemsSold: itemsSold,
       productBreakdown: productBreakdown,
       cashierBreakdown: cashierBreakdown,
+      voidCount: voided.length,
+      voidTotal: voided.fold(0.0, (sum, t) => sum + t.total),
     );
+  }
+
+  /// Voids a synced sale through the void_transaction RPC, which checks
+  /// [adminName] + [pin] server-side (see
+  /// 20261027_028_void_transactions.sql) — the app-side role check is
+  /// only for which button to show. Returns the updated sale; throws
+  /// [VoidTransactionException] with a user-facing message when the
+  /// server refuses (wrong PIN, not an admin, already voided).
+  ///
+  /// Does NOT put stock back — the caller does that right after (see
+  /// void_sale_dialog.dart), same split as checkout's record() +
+  /// deductStock.
+  Future<Transaction> voidTransaction(
+    Transaction txn, {
+    required String adminName,
+    required String pin,
+    required String reason,
+  }) async {
+    if (txn.id == null) {
+      throw const VoidTransactionException(
+          'This sale hasn\'t synced yet. Discard it from the list instead.');
+    }
+    final Map<String, dynamic> result;
+    try {
+      result = await _client.rpc('void_transaction', params: {
+        'p_transaction_id': txn.id,
+        'p_admin_name': adminName,
+        'p_pin': pin,
+        'p_reason': reason,
+      });
+    } catch (e) {
+      debugPrint('void_transaction failed: $e');
+      throw VoidTransactionException(_isLikelyNetworkFailure(e)
+          ? 'No connection. Voiding a sale needs to be online.'
+          : 'Could not void this sale. Try again.');
+    }
+    if (result['ok'] != true) {
+      throw VoidTransactionException(result['error'] as String? ?? 'Could not void this sale.');
+    }
+
+    final row = result['transaction'] as Map<String, dynamic>;
+    final updated = txn.asVoided(
+      at: DateTime.parse(row['voided_at'] as String).toLocal(),
+      byName: row['voided_by_name'] as String?,
+      reason: row['void_reason'] as String?,
+    );
+    final index = _transactions.indexWhere((t) => t.id == txn.id);
+    if (index >= 0) _transactions[index] = updated;
+    notifyListeners();
+    return updated;
   }
 
   Future<void> _loadPendingFromDisk() async {
@@ -511,8 +566,25 @@ class TransactionProvider extends ChangeNotifier {
       discountIdNumber: row['discount_id_number'] as String?,
       discountAmount: (row['discount_amount'] as num?)?.toDouble() ?? 0,
       vatExemptAmount: (row['vat_exempt_amount'] as num?)?.toDouble() ?? 0,
+      // Null until 20261027_028_void_transactions.sql has run, which
+      // simply reads as "not voided".
+      voidedAt: row['status'] == 'voided' && row['voided_at'] != null
+          ? DateTime.parse(row['voided_at'] as String).toLocal()
+          : null,
+      voidedByName: row['voided_by_name'] as String?,
+      voidReason: row['void_reason'] as String?,
     );
   }
+}
+
+/// User-facing reason a void didn't go through — see
+/// [TransactionProvider.voidTransaction].
+class VoidTransactionException implements Exception {
+  final String message;
+  const VoidTransactionException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 /// Mutable running totals used only inside reportFor() while grouping

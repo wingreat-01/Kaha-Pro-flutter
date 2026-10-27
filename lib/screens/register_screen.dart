@@ -22,6 +22,7 @@ import '../widgets/barcode_keyboard_listener.dart';
 import '../services/scan_sounds.dart';
 import '../widgets/barcode_scanner_screen.dart';
 import '../widgets/batch_add_product_dialog.dart';
+import '../state/tour_provider.dart';
 
 /// Phase 2 — Pass B + C: cart wired via CartProvider, amber LED total,
 /// dashboard-style category navigation, a customizable catalog (add
@@ -34,7 +35,10 @@ import '../widgets/batch_add_product_dialog.dart';
 /// shows the product grid, filtered by real category.
 class RegisterScreen extends StatefulWidget {
   final String? cashierName;
-  const RegisterScreen({super.key, this.cashierName});
+  // Only admins can reach Settings → Categories, so only they get the
+  // category steps of the guided tour.
+  final bool isAdmin;
+  const RegisterScreen({super.key, this.cashierName, this.isAdmin = false});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -44,6 +48,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String _selectedCategory = 'All';
   bool _editMode = false;
   String _searchQuery = '';
+  // Lets the guided tour scroll the "+" tile (always the last grid item)
+  // into view — GridView.builder doesn't build it while it's off-screen,
+  // so there'd be nothing to spotlight.
+  final ScrollController _gridScroll = ScrollController();
+  TourStep _lastTourStep = TourStep.none;
+
+  @override
+  void dispose() {
+    _gridScroll.dispose();
+    super.dispose();
+  }
+
+  void _revealAddTileForTour() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_gridScroll.hasClients) return;
+      if (TourKeys.addProduct.currentContext != null) return;
+      _gridScroll.animateTo(
+        _gridScroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _startTour(BuildContext context, ProductProvider catalog) {
+    final hasCategories = catalog.categoryNames.any((c) => c != ProductProvider.uncategorized);
+    if (!hasCategories && !widget.isAdmin) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: AppColors.slate,
+          title: Text('Start with categories', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
+          content: Text(
+            'Products need a category first, and categories are managed in Settings. Ask an admin to add one, then come back to add products.',
+            style: AppTextStyles.body(size: 13),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
+    context.read<TourProvider>().start(hasCategories: hasCategories);
+  }
 
   static const double _wideBreakpoint = 700;
   static const double _sidebarWidth = 200;
@@ -207,6 +256,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 debugPrint('Could not add recipe item to new product $newId: $e');
               }
             }
+            if (mounted) this.context.read<TourProvider>().advanceFrom(TourStep.addProduct);
           }).catchError((e) {
             if (!context.mounted) return;
             // Rare path — the dialog's own limit check should catch
@@ -442,6 +492,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   /// "+" tile: with the scanner on, offer single vs. batch entry.
   void _chooseAddMode(BuildContext context, ProductProvider catalog) {
+    // Prevent creating products before a real category exists. Register's
+    // All tab intentionally hides Uncategorized, so an unassigned product
+    // would otherwise appear to have vanished after saving.
+    if (!catalog.categoryNames.any((c) => c != ProductProvider.uncategorized)) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: AppColors.slate,
+          title: Text('Create a category first', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
+          content: Text(
+            widget.isAdmin
+                ? 'Products need a category so they show up in the Register grid. We\'ll walk you through adding one in Settings → Categories.'
+                : 'Products need a category so they show up in the Register grid. Ask an admin to add one in Settings → Categories.',
+            style: AppTextStyles.body(size: 13),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(widget.isAdmin ? 'Not now' : 'Got it')),
+            if (widget.isAdmin)
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  context.read<TourProvider>().start(hasCategories: false);
+                },
+                child: const Text('Show me'),
+              ),
+          ],
+        ),
+      );
+      return;
+    }
     if (!context.read<StoreProvider>().barcodeScannerAvailable) {
       _openAddProductDialog(context, catalog);
       return;
@@ -509,6 +589,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             category: category,
             barcodes: barcodes,
           );
+          if (mounted) this.context.read<TourProvider>().advanceFrom(TourStep.addProduct);
         },
       ),
     );
@@ -585,6 +666,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              TextButton.icon(
+                onPressed: () => _startTour(context, catalog),
+                icon: const Icon(Icons.lightbulb_outline, size: 17),
+                label: const Text('Guided tour'),
+              ),
               if (context.watch<StoreProvider>().barcodeScannerAvailable)
                 IconButton(
                   tooltip: 'Scan barcode',
@@ -605,6 +691,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         Expanded(
           child: GridView.builder(
+            controller: _gridScroll,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             itemCount: products.length + 1, // +1 for the add-product tile
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -615,7 +702,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             itemBuilder: (context, index) {
               if (index == products.length) {
-                return AddProductCard(onTap: () => _chooseAddMode(context, catalog));
+                return KeyedSubtree(key: TourKeys.addProduct, child: AddProductCard(onTap: () => _chooseAddMode(context, catalog)));
               }
               final product = products[index];
               return ProductCard(
@@ -657,6 +744,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final scannerOn = context.watch<StoreProvider>().barcodeScannerAvailable;
 
+    final tourStep = context.watch<TourProvider>().step;
+    if (tourStep != _lastTourStep) {
+      _lastTourStep = tourStep;
+      if (tourStep == TourStep.addProduct) _revealAddTileForTour();
+    }
+
     return BarcodeKeyboardListener(
       enabled: scannerOn,
       onBarcode: _onWedgeScan,
@@ -674,7 +767,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 onSelected: (category) => setState(() => _selectedCategory = category),
               ),
               Expanded(child: _buildGrid(context, cart, catalog, contentWidth)),
-              CartSidePanel(cart: cart, onCheckout: () => _onCheckout(context, cart)),
+              KeyedSubtree(key: TourKeys.checkout, child: CartSidePanel(cart: cart, onCheckout: () => _onCheckout(context, cart))),
             ],
           );
         }
@@ -687,7 +780,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onSelected: (category) => setState(() => _selectedCategory = category),
             ),
             Expanded(child: _buildGrid(context, cart, catalog, constraints.maxWidth)),
-            CartBottomBar(cart: cart, onCheckout: () => _onCheckout(context, cart)),
+            KeyedSubtree(key: TourKeys.checkout, child: CartBottomBar(cart: cart, onCheckout: () => _onCheckout(context, cart))),
           ],
         );
       },

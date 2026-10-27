@@ -1101,6 +1101,40 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
+  /// Reverse of [deductStockForLineItems] for a voided sale — same
+  /// product/size resolution, but each line is logged to
+  /// product_stock_movements as a "Void" so Inventory Movements shows
+  /// the stock coming back next to the original sale.
+  ///
+  /// Serialized units (Product.trackUnits) are NOT returned to stock:
+  /// sales don't record which unit barcodes were sold, so there's no way
+  /// to know which ones to put back. Returns the names of those products
+  /// so the caller can tell the admin to re-add the units by hand.
+  Future<List<String>> restockForVoid(
+    List<TransactionLineItem> items, {
+    required String reference,
+    String? staffName,
+  }) async {
+    final unitProducts = <String>[];
+    for (final item in items) {
+      if (item.productId.isEmpty) continue;
+      final product = productById(item.productId);
+      if (product == null) continue;
+      if (product.trackUnits) unitProducts.add(product.name);
+      if (!product.trackStock) continue;
+      final live = _variantById(item.productId, item.variantId);
+      if (live != null && live.stockQty != null) {
+        await adjustVariantStock(item.productId, live.id, item.quantity,
+            reason: 'Void', note: 'Voided sale $reference', staffName: staffName);
+      } else {
+        await adjustStock(item.productId, item.quantity,
+            reason: 'Void', note: 'Voided sale $reference', staffName: staffName,
+            variantName: item.variantName);
+      }
+    }
+    return unitProducts;
+  }
+
   /// Sets what one unit of this product costs the store, or clears it
   /// when [cost] is null ("not set"). Optimistic with rollback, same as
   /// [setLowStockThreshold]. Negative values are clamped to 0.

@@ -70,6 +70,12 @@ class Transaction {
   final String? discountIdNumber;
   final double discountAmount; // 20% discount amount, already subtracted from `total`
   final double vatExemptAmount; // VAT portion removed from the gross price, informational
+  // Void snapshot (see 20261027_028_void_transactions.sql) — all null on
+  // a normal completed sale. A voided sale stays in the list for the
+  // audit trail but is left out of every total and report.
+  final DateTime? voidedAt;
+  final String? voidedByName;
+  final String? voidReason;
 
   const Transaction({
     this.id,
@@ -88,6 +94,9 @@ class Transaction {
     this.discountIdNumber,
     this.discountAmount = 0,
     this.vatExemptAmount = 0,
+    this.voidedAt,
+    this.voidedByName,
+    this.voidReason,
   });
 
   /// True for a sale that's been recorded locally (queued while
@@ -97,6 +106,34 @@ class Transaction {
   bool get hasDiscount => discountType != null;
 
   int get itemCount => items.fold(0, (sum, item) => sum + item.quantity);
+
+  bool get isVoided => voidedAt != null;
+
+  /// Copy of this sale marked voided — swaps the in-memory row after
+  /// void_transaction() succeeds, without a full reload.
+  Transaction asVoided({required DateTime at, String? byName, String? reason}) {
+    return Transaction(
+      id: id,
+      localId: localId,
+      cashierName: cashierName,
+      transactionNumber: transactionNumber,
+      timestamp: timestamp,
+      items: items,
+      total: total,
+      cashTendered: cashTendered,
+      change: change,
+      paymentMethodId: paymentMethodId,
+      paymentMethodName: paymentMethodName,
+      discountType: discountType,
+      discountHolderName: discountHolderName,
+      discountIdNumber: discountIdNumber,
+      discountAmount: discountAmount,
+      vatExemptAmount: vatExemptAmount,
+      voidedAt: at,
+      voidedByName: byName,
+      voidReason: reason,
+    );
+  }
 }
 
 /// Aggregated rollup of every transaction on one calendar day. `day` is
@@ -109,7 +146,11 @@ class DaySummary {
 
   const DaySummary({required this.day, required this.transactions});
 
-  double get totalRevenue => transactions.fold(0.0, (sum, t) => sum + t.total);
-  int get saleCount => transactions.length;
-  int get itemsSold => transactions.fold(0, (sum, t) => sum + t.itemCount);
+  // Voided sales are still listed under their day, but never counted.
+  Iterable<Transaction> get _completed => transactions.where((t) => !t.isVoided);
+
+  double get totalRevenue => _completed.fold(0.0, (sum, t) => sum + t.total);
+  int get saleCount => _completed.length;
+  int get itemsSold => _completed.fold(0, (sum, t) => sum + t.itemCount);
+  int get voidCount => transactions.length - saleCount;
 }

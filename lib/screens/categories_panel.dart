@@ -6,31 +6,60 @@ import '../state/product_provider.dart';
 import '../state/currency_provider.dart';
 import '../widgets/reassign_category_dialog.dart';
 import '../widgets/bounded_content.dart';
+import '../widgets/guided_tour_overlay.dart';
+import '../state/tour_provider.dart';
 
 /// Categories admin panel — reached via Settings → Categories. Categories
 /// are now a real stored list (see ProductProvider), so this can add an
 /// empty category, rename one (which bulk-updates every product in it),
 /// or delete one (which moves its products into the `Uncategorized`
 /// fallback rather than leaving them dangling).
-class CategoriesPanel extends StatelessWidget {
+class CategoriesPanel extends StatefulWidget {
   const CategoriesPanel({super.key});
+
+  @override
+  State<CategoriesPanel> createState() => _CategoriesPanelState();
+}
+
+class _CategoriesPanelState extends State<CategoriesPanel> {
+  Future<void> _openAddCategory() async {
+    final saved = await _showCategoryForm(context);
+    if (!mounted || saved != true) return;
+    context.read<TourProvider>().advanceFrom(TourStep.addCategory);
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ProductProvider>();
     final categories = provider.categoryNames;
 
-    return Scaffold(
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) return;
+        final tour = context.read<TourProvider>();
+        if (tour.step == TourStep.leaveCategories) {
+          tour.advanceFrom(TourStep.leaveCategories);
+        } else if (tour.step == TourStep.addCategory) {
+          // Backed out (system back) before adding one — point them at
+          // the Categories row again instead of a button that's gone.
+          tour.rewindTo(TourStep.openCategories);
+        }
+      },
+      child: Stack(
+      children: [
+      Scaffold(
       backgroundColor: AppColors.charcoal,
       appBar: AppBar(
         backgroundColor: AppColors.charcoal,
         elevation: 0,
+        leading: BackButton(key: TourKeys.categoriesBack),
         title: Text('Categories', style: AppTextStyles.mono(size: 16, weight: FontWeight.w700)),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        key: TourKeys.addCategory,
         backgroundColor: AppColors.ledAmber,
         foregroundColor: AppColors.charcoal,
-        onPressed: () => _showCategoryForm(context),
+        onPressed: _openAddCategory,
         icon: const Icon(Icons.add),
         label: const Text('Add category'),
       ),
@@ -41,11 +70,15 @@ class CategoriesPanel extends StatelessWidget {
           itemBuilder: (context, i) => _CategoryRow(name: categories[i]),
         ),
       ),
+      ),
+      const GuidedTourLayer(steps: {TourStep.addCategory, TourStep.leaveCategories}),
+      ],
+      ),
     );
   }
 
-  static void _showCategoryForm(BuildContext context, {String? existing}) {
-    showDialog(
+  static Future<bool?> _showCategoryForm(BuildContext context, {String? existing}) {
+    return showDialog<bool>(
       context: context,
       builder: (_) => _CategoryFormDialog(existing: existing),
     );
@@ -77,7 +110,7 @@ class _CategoryRow extends StatelessWidget {
               MaterialPageRoute(builder: (_) => _CategoryProductsView(categoryName: name)),
             );
           } else {
-            CategoriesPanel._showCategoryForm(context, existing: name);
+            _CategoriesPanelState._showCategoryForm(context, existing: name);
           }
         },
         child: Padding(
@@ -379,7 +412,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final name = _nameController.text.trim();
     final provider = context.read<ProductProvider>();
 
@@ -399,12 +432,17 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
       return;
     }
 
-    if (_isEditing) {
-      provider.renameCategory(widget.existing!, name);
-    } else {
-      provider.addCategory(name);
+    try {
+      if (_isEditing) {
+        await provider.renameCategory(widget.existing!, name);
+      } else {
+        await provider.addCategory(name);
+      }
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not save category. Check your connection and try again.');
     }
-    Navigator.of(context).pop();
   }
 
   @override

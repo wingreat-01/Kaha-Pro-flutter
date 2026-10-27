@@ -1,16 +1,65 @@
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
+import '../models/user.dart';
 import '../state/currency_provider.dart';
 import '../theme/app_theme.dart';
 import 'led_total.dart';
+import 'void_sale_dialog.dart';
 
 /// Detail view for one logged transaction — opened by tapping a row in
-/// TransactionsPanel. Read-only: shows every line item plus total,
-/// cash tendered, and change from that sale.
+/// TransactionsPanel. Shows every line item plus total, cash tendered,
+/// and change from that sale, and the Void sale action (admin-approved
+/// — see void_sale_dialog.dart) or the void record if already voided.
 class TransactionDetailModal extends StatelessWidget {
   final Transaction transaction;
+  // Who's logged in — decides "Void sale" (admin) vs "Request void"
+  // (cashier, needs an admin's PIN). Null hides the action entirely.
+  final AppUser? currentUser;
 
-  const TransactionDetailModal({super.key, required this.transaction});
+  const TransactionDetailModal({super.key, required this.transaction, this.currentUser});
+
+  Future<void> _void(BuildContext context) async {
+    final voided = await showVoidSaleDialog(
+      context,
+      transaction: transaction,
+      currentUser: currentUser!,
+    );
+    if (voided == true && context.mounted) Navigator.of(context).pop();
+  }
+
+  Widget _voidedBanner() {
+    final at = transaction.voidedAt!;
+    final by = transaction.voidedByName;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.ledgerRed.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.ledgerRed.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'VOIDED',
+            style: AppTextStyles.mono(size: 11, weight: FontWeight.w700, color: AppColors.ledgerRed, letterSpacing: 1),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${by == null ? '' : 'By $by · '}${_formatTimestamp(at)}',
+            style: AppTextStyles.body(size: 12, color: AppColors.textSecondary),
+          ),
+          if (transaction.voidReason != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              transaction.voidReason!,
+              style: AppTextStyles.body(size: 12.5, color: AppColors.textPrimary),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   String _formatTimestamp(DateTime t) {
     final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
@@ -63,6 +112,10 @@ class TransactionDetailModal extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (transaction.isVoided) ...[
+                  const SizedBox(height: 10),
+                  _voidedBanner(),
+                ],
                 const SizedBox(height: 12),
                 Divider(color: AppColors.slateBorder, height: 1),
                 const SizedBox(height: 8),
@@ -113,6 +166,25 @@ class TransactionDetailModal extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Pending (unsynced) sales are discarded from the list
+                // instead — there's no server row to void yet.
+                if (currentUser != null && !transaction.isVoided && !transaction.isPending) ...[
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () => _void(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.ledgerRed,
+                      side: BorderSide(color: AppColors.ledgerRed.withValues(alpha: 0.6)),
+                    ),
+                    icon: Icon(
+                      currentUser!.role == UserRole.admin ? Icons.block : Icons.admin_panel_settings_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      currentUser!.role == UserRole.admin ? 'Void sale' : 'Request void (admin approval)',
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

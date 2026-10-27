@@ -58,6 +58,10 @@ class SalesReport {
   final int itemsSold;
   final List<ProductSalesLine> productBreakdown; // unsorted; screen sorts by qty or revenue
   final List<CashierSalesLine> cashierBreakdown; // sorted by revenue desc
+  // Voided sales in the range — excluded from every figure above and
+  // reported on their own so voids stay visible to the owner.
+  final int voidCount;
+  final double voidTotal;
 
   const SalesReport({
     required this.rangeStart,
@@ -68,6 +72,8 @@ class SalesReport {
     required this.itemsSold,
     required this.productBreakdown,
     required this.cashierBreakdown,
+    this.voidCount = 0,
+    this.voidTotal = 0,
   });
 
   double get avgTransactionValue => transactionCount == 0 ? 0 : totalRevenue / transactionCount;

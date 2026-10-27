@@ -21,6 +21,7 @@ import 'state/printer_provider.dart';
 import 'state/currency_provider.dart';
 import 'state/receipt_options_provider.dart';
 import 'state/billing_provider.dart';
+import 'state/tour_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/store_setup_screen.dart';
 import 'screens/add_self_as_staff_screen.dart';
@@ -80,6 +81,9 @@ Future<void> main() async {
         // details on every app launch (even for users who never touch
         // Settings > Plan) would be wasted work for most sessions.
         ChangeNotifierProvider(create: (_) => BillingProvider()),
+        // First-run guided tour state — spans several screens/routes,
+        // so it lives here rather than in any one of them.
+        ChangeNotifierProvider(create: (_) => TourProvider()),
       ],
       child: const KahaproApp(),
     ),

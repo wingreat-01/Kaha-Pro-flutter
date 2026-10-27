@@ -130,6 +130,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       itemsSold: report.itemsSold,
       productBreakdown: costedLines,
       cashierBreakdown: report.cashierBreakdown,
+      voidCount: report.voidCount,
+      voidTotal: report.voidTotal,
     );
   }
 
@@ -402,6 +404,11 @@ class _SummaryGrid extends StatelessWidget {
           label: 'TRANSACTIONS',
           value: '${report.transactionCount}',
           valueColor: AppColors.textPrimary,
+          // Voided sales aren't in any figure here — surfaced so they
+          // can't quietly disappear from the owner's view.
+          subtitle: report.voidCount == 0
+              ? null
+              : '${report.voidCount} voided · ${context.money(report.voidTotal)}',
         ),
         _SummaryCard(
           label: 'ITEMS SOLD',
