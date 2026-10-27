@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../services/scan_sounds.dart';
 import '../theme/app_theme.dart';
 
 /// What the camera screen shows after a code was handled in
@@ -18,12 +19,23 @@ class ScanFeedback {
   final String? actionLabel;
   final VoidCallback? onAction;
 
+  /// Which beep to play: success for [ScanFeedback.ok]; for failures,
+  /// [ScanSound.error] (e.g. barcode not found) unless the caller says
+  /// it was a repeat ([ScanSound.duplicate]).
+  final ScanSound sound;
+
   const ScanFeedback.ok(this.message)
       : ok = true,
+        sound = ScanSound.success,
         actionLabel = null,
         onAction = null;
 
-  const ScanFeedback.fail(this.message, {this.actionLabel, this.onAction}) : ok = false;
+  const ScanFeedback.fail(
+    this.message, {
+    this.actionLabel,
+    this.onAction,
+    this.sound = ScanSound.error,
+  }) : ok = false;
 }
 
 /// Full-screen camera barcode scanner (Android, iOS and web).
@@ -125,6 +137,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
     try {
       if (!_continuous) {
+        unawaited(ScanSounds.play(ScanSound.success));
         HapticFeedback.mediumImpact();
         if (mounted) Navigator.of(context).pop(code);
         return;
@@ -132,6 +145,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
       final feedback = await widget.onScan!(context, code);
       if (!mounted) return;
+      unawaited(ScanSounds.play(feedback.sound));
       if (feedback.ok) {
         HapticFeedback.mediumImpact();
         _okCount += 1;

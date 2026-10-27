@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../state/product_provider.dart';
 import '../theme/app_theme.dart';
+import '../services/scan_sounds.dart';
 import 'barcode_scanner_screen.dart';
 
 /// Batch entry for items where every unit has its own barcode.
@@ -113,6 +114,9 @@ class _BatchAddProductDialogState extends State<BatchAddProductDialog> {
 
   void _onScanSubmitted(String value) {
     final problem = _addCode(value);
+    if (value.trim().isNotEmpty) {
+      ScanSounds.play(problem == null ? ScanSound.success : ScanSound.duplicate);
+    }
     setState(() => _scanMessage = problem);
     _scanCtrl.clear();
     _scanFocus.requestFocus(); // ready for the next unit
@@ -126,7 +130,7 @@ class _BatchAddProductDialogState extends State<BatchAddProductDialog> {
         final problem = _addCode(code);
         return problem == null
             ? ScanFeedback.ok('Unit ${_codes.length} added')
-            : ScanFeedback.fail(problem);
+            : ScanFeedback.fail(problem, sound: ScanSound.duplicate);
       },
     );
   }

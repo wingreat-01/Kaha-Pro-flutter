@@ -19,6 +19,7 @@ import '../widgets/checkout_modal.dart';
 import '../models/product_variant.dart';
 import '../state/store_provider.dart';
 import '../widgets/barcode_keyboard_listener.dart';
+import '../services/scan_sounds.dart';
 import '../widgets/barcode_scanner_screen.dart';
 import '../widgets/batch_add_product_dialog.dart';
 
@@ -374,10 +375,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (unit != null && unitProduct != null) {
         return cart.addUnit(unitProduct, unit.id)
             ? ScanFeedback.ok('Added ${unitProduct.name}')
-            : ScanFeedback.fail('That unit is already in the cart');
+            : ScanFeedback.fail('That unit is already in the cart', sound: ScanSound.duplicate);
       }
       if (catalog.wasUnitSold(raw)) {
-        return ScanFeedback.fail('That unit was already sold');
+        return ScanFeedback.fail('That unit was already sold', sound: ScanSound.duplicate);
       }
       return ScanFeedback.fail(
         'No product with barcode $raw',
@@ -409,6 +410,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   /// BarcodeKeyboardListener) — ring it up and confirm with a snackbar.
   Future<void> _onWedgeScan(String code) async {
     final feedback = await _handleScannedCode(context, code);
+    ScanSounds.play(feedback.sound);
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
