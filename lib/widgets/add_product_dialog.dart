@@ -1,7 +1,7 @@
 import 'dart:collection';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'image_source_sheet.dart';
 import 'barcode_scanner_screen.dart';
 import '../models/product.dart';
@@ -35,6 +35,9 @@ class AddProductDialog extends StatefulWidget {
     // null = barcode feature is off, leave the product's barcode as-is;
     // '' = barcode field was left/cleared empty; otherwise the code.
     String? barcode,
+    // Starting count for a new tracked product (0 when editing, when
+    // Track stock is off, or when sizes carry their own stock instead).
+    int openingStock,
   }) onSubmit;
 
   /// Show the optional Barcode field (Retail store with the scanner
@@ -95,6 +98,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   final _emojiCtrl = TextEditingController();
   final _newCategoryCtrl = TextEditingController();
   final _barcodeCtrl = TextEditingController();
+  final _openingStockCtrl = TextEditingController();
 
   String? _selectedCategory;
   bool _addingNewCategory = false;
@@ -164,8 +168,16 @@ class _AddProductDialogState extends State<AddProductDialog> {
     _newCategoryCtrl.dispose();
     _unitLabelCtrl.dispose();
     _barcodeCtrl.dispose();
+    _openingStockCtrl.dispose();
     super.dispose();
   }
+
+  /// New product, Track stock on, and no size carrying its own count —
+  /// when sizes have stock, the product total is the sum of theirs
+  /// (ProductProvider._syncProductStockFromVariants), so a separate
+  /// product-level count would double it.
+  bool get _showOpeningStock =>
+      !_isEditing && _trackStock && !_draftVariants.any((v) => v.stockQty != null);
 
   Future<void> _scanBarcode() async {
     final code = await BarcodeScannerScreen.scanOnce(context);
@@ -227,6 +239,15 @@ class _AddProductDialogState extends State<AddProductDialog> {
         return;
       }
     }
+    var openingStock = 0;
+    if (_showOpeningStock && _openingStockCtrl.text.trim().isNotEmpty) {
+      final parsed = int.tryParse(_openingStockCtrl.text.trim());
+      if (parsed == null || parsed < 0) {
+        setState(() => _error = 'Opening stock must be a whole number, 0 or more.');
+        return;
+      }
+      openingStock = parsed;
+    }
 
     widget.onSubmit(
       name: name,
@@ -246,6 +267,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
               .toList(),
       recipeItems: _draftRecipeItems,
       barcode: barcode,
+      openingStock: openingStock,
     );
     Navigator.of(context).pop();
   }
@@ -482,6 +504,23 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 if (_unit == 'custom') ...[
                   const SizedBox(height: 10),
                   _field('', _unitLabelCtrl, hint: 'e.g. roll, bundle, meter'),
+                ],
+                if (_showOpeningStock) ...[
+                  const SizedBox(height: 14),
+                  Text('Opening stock',
+                      style: AppTextStyles.mono(size: 10, weight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 1)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _openingStockCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    style: AppTextStyles.body(size: 14),
+                    decoration: const InputDecoration(
+                      hintText: '0',
+                      helperText: 'How many you have on hand now. Recorded as Receiving in Inventory Movements.',
+                      helperMaxLines: 2,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: 14),
               ],

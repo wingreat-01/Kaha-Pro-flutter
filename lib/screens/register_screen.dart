@@ -174,7 +174,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // onUpgradeTap: left unwired until an upgrade screen/flow exists
         // (per the subscription plan doc's build order) — Cancel-only
         // for now on the limit-reached view.
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const [], barcode}) {
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const [], barcode, openingStock = 0}) {
           catalog
               .addProduct(
                 name: name,
@@ -186,6 +186,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 unit: unit,
                 unitLabel: unitLabel,
                 barcode: barcode,
+                stockQty: openingStock,
+                staffName: widget.cashierName,
               )
               .then((newId) async {
             // Sizes were staged locally in the dialog since the
@@ -210,6 +212,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   name: v.name,
                   price: v.price,
                   stockQty: v.stockQty,
+                  staffName: widget.cashierName,
                 );
                 savedVariantIds.add(variantId);
               } catch (e) {
@@ -297,7 +300,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : null,
         barcodeEnabled: context.read<StoreProvider>().barcodeScannerAvailable,
         findByBarcode: catalog.findByBarcode,
-        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const [], barcode}) async {
+        // openingStock is add-only — the dialog always sends 0 when editing.
+        onSubmit: ({required name, required price, required category, emoji, imageBytes, trackStock = false, unit = 'pc', unitLabel, variants = const [], recipeItems = const [], barcode, openingStock = 0}) async {
           try {
             await catalog.updateProduct(
               product.id,
@@ -397,14 +401,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
+    // Same out-of-stock rule as scanning — only for Track stock products.
     if (!product.hasVariants) {
+      final outOfStock = _outOfStockMessage(cart, product);
+      if (outOfStock != null) {
+        _showOutOfStock(context, outOfStock);
+        return;
+      }
       cart.add(product);
       return;
     }
     ProductSizePickerSheet.show(
       context,
       product: product,
-      onSelected: (variant) => cart.add(product, variant: variant),
+      onSelected: (variant) {
+        final outOfStock = _outOfStockMessage(cart, product, variant: variant);
+        if (outOfStock != null) {
+          _showOutOfStock(context, outOfStock);
+          return;
+        }
+        cart.add(product, variant: variant);
+      },
     );
   }
 
@@ -440,6 +457,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (!product.hasVariants) {
+      final outOfStock = _outOfStockMessage(cart, product);
+      if (outOfStock != null) return ScanFeedback.fail(outOfStock);
       cart.add(product);
       return ScanFeedback.ok('Added ${product.name}');
     }
@@ -452,8 +471,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
     final variant = picked;
     if (variant == null) return ScanFeedback.fail('No size picked for ${product.name}');
+    final outOfStock = _outOfStockMessage(cart, product, variant: variant);
+    if (outOfStock != null) return ScanFeedback.fail(outOfStock);
     cart.add(product, variant: variant);
     return ScanFeedback.ok('Added ${product.name} (${variant.name})');
+  }
+
+  /// Why a stock-tracked product (or size) can't go into the cart: it has
+  /// nothing left to sell, counting what's already in the cart, so adding
+  /// a third unit with 2 on hand is refused too. Null means it may be
+  /// added. Shared by barcode scans and tile taps. Products with Track
+  /// stock off always pass: their count is never maintained (made-to-order
+  /// items), so 0 there means nothing.
+  ///
+  /// A size with its own count is checked against that count; sizes
+  /// without one share the product-level stock, so every cart line drawing
+  /// on that shared stock counts against it.
+  String? _outOfStockMessage(CartProvider cart, Product product, {ProductVariant? variant}) {
+    if (!product.trackStock) return null;
+    final ownStock = variant?.stockQty;
+    final int onHand;
+    final int inCart;
+    if (ownStock != null) {
+      onHand = ownStock;
+      inCart = cart.items
+          .where((i) => i.product.id == product.id && i.selectedVariant?.id == variant!.id)
+          .fold(0, (sum, i) => sum + i.quantity);
+    } else {
+      onHand = product.stockQty;
+      inCart = cart.items
+          .where((i) => i.product.id == product.id && i.selectedVariant?.stockQty == null)
+          .fold(0, (sum, i) => sum + i.quantity);
+    }
+    if (onHand - inCart > 0) return null;
+
+    final label = variant == null ? product.name : '${product.name} (${variant.name})';
+    return onHand <= 0
+        ? '$label is out of stock'
+        : 'Only $onHand $label in stock — all already in the cart';
+  }
+
+  /// Tile-tap counterpart of a refused scan: same message, as a snackbar.
+  void _showOutOfStock(BuildContext context, String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.slate,
+        content: Text(message, style: AppTextStyles.body(size: 13, color: AppColors.ledgerRed)),
+      ),
+    );
   }
 
   /// A barcode arrived from a USB / Bluetooth scanner (see
@@ -588,6 +655,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             price: price,
             category: category,
             barcodes: barcodes,
+            staffName: widget.cashierName,
           );
           if (mounted) this.context.read<TourProvider>().advanceFrom(TourStep.addProduct);
         },

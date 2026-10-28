@@ -378,6 +378,12 @@ class ProductProvider extends ChangeNotifier {
     String? unitLabel,
     String? barcode,
     bool trackUnits = false,
+    // Who added it — shown as the user on the "Initial stock" row in
+    // Inventory Movements.
+    String? staffName,
+    // False when the caller logs the opening stock itself once the
+    // whole add has succeeded (addProductWithUnits).
+    bool logInitialStock = true,
   }) async {
     final cleanBarcode = _cleanBarcode(barcode);
     if (cleanBarcode != null) {
@@ -466,6 +472,13 @@ class ProductProvider extends ChangeNotifier {
         trackUnits: trackUnits,
       ));
       notifyListeners();
+      // Opening stock shows in Inventory Movements as Receiving, the same
+      // as a later restock would. Sizes with their own stock are logged
+      // per size by addVariant instead (this product-level figure is
+      // 0 for those — see AddProductDialog's Opening stock field).
+      if (logInitialStock && trackStock && stockQty > 0) {
+        await _logMovement(_products.last, stockQty, reason: 'Initial stock', staffName: staffName);
+      }
       return newId;
     } catch (e) {
       // The real gate: enforce_product_limit trigger rejects the
@@ -636,6 +649,7 @@ class ProductProvider extends ChangeNotifier {
     required String name,
     required double price,
     int? stockQty, // optional per-size stock; null = shares product stock
+    String? staffName, // for the "Initial stock" movement row
   }) async {
     final index = _products.indexWhere((p) => p.id == productId);
     if (index < 0) return '';
@@ -666,6 +680,16 @@ class ProductProvider extends ChangeNotifier {
       variants: [...currentVariants, variant],
     );
     notifyListeners();
+    // A size that arrives with its own stock is stock received — log it
+    // like any restock. (_syncProductStockFromVariants below only mirrors
+    // the total onto the product and deliberately logs nothing, so this
+    // is counted once.)
+    final product = _products[index];
+    final added = variant.stockQty ?? 0;
+    if (product.trackStock && added > 0) {
+      await _logMovement(product, added,
+          reason: 'Initial stock', staffName: staffName, variantName: variant.name);
+    }
     await _syncProductStockFromVariants(productId);
     return variant.id;
   }
@@ -1283,6 +1307,7 @@ class ProductProvider extends ChangeNotifier {
     required double price,
     required String category,
     required List<String> barcodes,
+    String? staffName,
   }) async {
     final codes = _cleanUnitCodes(barcodes);
     if (codes.isEmpty) throw StateError('No units to add');
@@ -1298,6 +1323,7 @@ class ProductProvider extends ChangeNotifier {
       trackStock: true,
       stockQty: codes.length,
       trackUnits: true,
+      logInitialStock: false,
     );
     try {
       await _insertUnits(productId, codes);
@@ -1307,6 +1333,12 @@ class ProductProvider extends ChangeNotifier {
         await removeProduct(productId);
       } catch (_) {}
       rethrow;
+    }
+    // Logged only now, so a failed unit insert (product removed above)
+    // never leaves a Receiving row for stock that didn't happen.
+    final product = productById(productId);
+    if (product != null) {
+      await _logMovement(product, codes.length, reason: 'Units received (scanned)', staffName: staffName);
     }
     return productId;
   }
