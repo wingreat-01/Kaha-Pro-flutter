@@ -7,6 +7,7 @@ import '../state/receipt_options_provider.dart';
 import '../state/store_provider.dart';
 import '../state/theme_provider.dart';
 import '../state/tour_provider.dart';
+import '../state/keep_screen_on_provider.dart';
 import 'ingredients_panel.dart';
 import 'inventory_movements_panel.dart';
 import 'inventory_panel.dart';
@@ -15,6 +16,7 @@ import 'tables_panel.dart';
 import 'qr_menu_panel.dart';
 import 'qr_payments_panel.dart';
 import 'categories_panel.dart';
+import 'payroll/payroll_hub_screen.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
 import '../widgets/qr_ordering_gate.dart';
@@ -156,6 +158,14 @@ class SettingsPanel extends StatelessWidget {
             ),
           ),
         ),
+        _SettingsRow(
+          icon: Icons.badge_outlined,
+          label: 'Employees & Payroll',
+          subtitle: 'Time clock, time records, payroll & payslips',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => PayrollHubScreen(staffName: staffName)),
+          ),
+        ),
         KeyedSubtree(
           key: TourKeys.categoriesRow,
           child: _SettingsRow(
@@ -205,6 +215,16 @@ class SettingsPanel extends StatelessWidget {
           value: receiptOptions.showVatBreakdown,
           onChanged: (value) => context.read<ReceiptOptionsProvider>().setShowVatBreakdown(value),
         ),
+        if (KeepScreenOnProvider.isSupported)
+          _ToggleSettingsRow(
+            icon: Icons.light_mode_outlined,
+            label: 'Keep Screen On',
+            subtitle: context.watch<KeepScreenOnProvider>().enabled
+                ? 'On — display stays awake while logged in (this device)'
+                : 'Off — display sleeps on the phone\'s normal timer',
+            value: context.watch<KeepScreenOnProvider>().enabled,
+            onChanged: (value) => context.read<KeepScreenOnProvider>().setEnabled(value),
+          ),
         // Retail and General stores only — Food & Beverage never sees this.
         if (storeProvider.supportsBarcodeScanner)
           _ToggleSettingsRow(

@@ -13,6 +13,7 @@ import '../state/store_provider.dart';
 import '../state/payment_method_provider.dart';
 import '../state/transaction_provider.dart';
 import '../theme/app_theme.dart';
+import 'time_clock_screen.dart';
 
 // Same URL/reasoning as store_setup_screen.dart's copy of this
 // constant -- kept local rather than imported cross-screen since it's
@@ -329,6 +330,18 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF3A2600)),
                             )
                           : const Text('Sign in'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Employees time in/out here without a POS login.
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const TimeClockScreen()),
+                      ),
+                      icon: const Icon(Icons.badge_outlined, size: 18),
+                      label: const Text('Time Clock (time in / out)'),
                     ),
                   ),
                   const SizedBox(height: 14),

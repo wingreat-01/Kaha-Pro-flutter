@@ -22,6 +22,8 @@ import 'state/currency_provider.dart';
 import 'state/receipt_options_provider.dart';
 import 'state/billing_provider.dart';
 import 'state/tour_provider.dart';
+import 'state/keep_screen_on_provider.dart';
+import 'state/payroll_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/store_setup_screen.dart';
 import 'screens/add_self_as_staff_screen.dart';
@@ -84,6 +86,12 @@ Future<void> main() async {
         // First-run guided tour state — spans several screens/routes,
         // so it lives here rather than in any one of them.
         ChangeNotifierProvider(create: (_) => TourProvider()),
+        // ..load() restores this device's Keep screen on choice; the lock
+        // itself is only held while HomeShell (a logged-in session) is up.
+        ChangeNotifierProvider(create: (_) => KeepScreenOnProvider()..load()),
+        // Employees, time clock and payroll — loaded on demand by the
+        // Time Clock and Employees & Payroll screens, not at login.
+        ChangeNotifierProvider(create: (_) => PayrollProvider()),
       ],
       child: const KahaproApp(),
     ),

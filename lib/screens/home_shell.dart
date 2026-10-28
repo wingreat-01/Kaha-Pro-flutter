@@ -21,6 +21,7 @@ import '../state/recipe_provider.dart';
 import '../state/store_provider.dart';
 import '../state/incoming_order_provider.dart';
 import '../state/tour_provider.dart';
+import '../state/keep_screen_on_provider.dart';
 import '../widgets/guided_tour_overlay.dart';
 
 enum _Section { register, incoming, transactions, reports, assistant, settings }
@@ -69,9 +70,16 @@ class _HomeShellState extends State<HomeShell> {
 
   bool get _isAdmin => widget.user.role == UserRole.admin;
 
+  // Keep screen on lasts exactly as long as this logged-in session.
+  // Captured here because context lookups aren't safe in dispose().
+  late final KeepScreenOnProvider _keepScreenOn;
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _keepScreenOn = context.read<KeepScreenOnProvider>()..setInUse(true);
+    _lifecycle = AppLifecycleListener(onResume: _keepScreenOn.reapply);
     _connectivitySubscription =
         Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
     // Customer QR orders arrive live for the whole logged-in session,
@@ -98,6 +106,8 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    _keepScreenOn.setInUse(false);
     _connectivitySubscription.cancel();
     _newOrderSub?.cancel();
     // Captured in initState's post-frame callback: context lookups aren't
