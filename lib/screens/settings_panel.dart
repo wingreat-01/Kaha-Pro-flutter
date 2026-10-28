@@ -17,6 +17,7 @@ import 'qr_menu_panel.dart';
 import 'qr_payments_panel.dart';
 import 'categories_panel.dart';
 import 'payroll/payroll_hub_screen.dart';
+import 'export_data_screen.dart';
 import 'payment_methods_panel.dart';
 import '../widgets/bounded_content.dart';
 import '../widgets/qr_ordering_gate.dart';
@@ -156,6 +157,14 @@ class SettingsPanel extends StatelessWidget {
             MaterialPageRoute(
               builder: (_) => const QrOrderingGate(fullScreen: true, child: QrPaymentsPanel()),
             ),
+          ),
+        ),
+        _SettingsRow(
+          icon: Icons.file_download_outlined,
+          label: 'Export Data',
+          subtitle: 'Sales, inventory stock & payroll as spreadsheets (CSV)',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ExportDataScreen()),
           ),
         ),
         _SettingsRow(
