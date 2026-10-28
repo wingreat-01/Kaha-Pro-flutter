@@ -87,10 +87,15 @@ class _HomeShellState extends State<HomeShell> {
     // cashier notices one while on the Register.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _incomingOrders = context.read<IncomingOrderProvider>();
-      _newOrderSub?.cancel();
-      _newOrderSub = _incomingOrders!.newOrders.listen(_onNewOrders);
-      _incomingOrders!.start();
+      // Retail / Hardware and General stores have no QR ordering, so no
+      // live order subscription either. (login_screen.dart loads the
+      // store before HomeShell mounts, so the type is known here.)
+      if (context.read<StoreProvider>().supportsQrOrdering) {
+        _incomingOrders = context.read<IncomingOrderProvider>();
+        _newOrderSub?.cancel();
+        _newOrderSub = _incomingOrders!.newOrders.listen(_onNewOrders);
+        _incomingOrders!.start();
+      }
       // login_screen.dart awaits the catalog load before HomeShell
       // mounts, so an empty catalog here really is a brand-new store.
       if (_isAdmin) {
@@ -192,6 +197,11 @@ class _HomeShellState extends State<HomeShell> {
       case _Section.register:
         return RegisterScreen(cashierName: widget.user.name, isAdmin: _isAdmin);
       case _Section.incoming:
+        // Defensive fallback, same as reports/settings below: the icon
+        // that opens this is hidden for non-F&B stores.
+        if (!context.read<StoreProvider>().supportsQrOrdering) {
+          return RegisterScreen(cashierName: widget.user.name, isAdmin: _isAdmin);
+        }
         return QrOrderingGate(
           child: IncomingOrdersPanel(cashierName: widget.user.name),
         );
@@ -356,6 +366,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pendingCount = context.watch<TransactionProvider>().pendingCount;
+    final qrSupported = context.watch<StoreProvider>().supportsQrOrdering;
     final qrAllowed = context.watch<StoreProvider>().canUseQrOrdering;
     final incomingCount = qrAllowed ? context.watch<IncomingOrderProvider>().pendingCount : 0;
 
@@ -437,6 +448,7 @@ class _HomeShellState extends State<HomeShell> {
             },
             tourKey: TourKeys.registerIcon,
           ),
+          if (qrSupported)
           _headerIcon(
             icon: Icons.room_service_outlined,
             tooltip: incomingCount > 0

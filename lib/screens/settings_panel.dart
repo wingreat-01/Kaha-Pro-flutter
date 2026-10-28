@@ -129,6 +129,9 @@ class SettingsPanel extends StatelessWidget {
             MaterialPageRoute(builder: (_) => UsersPanel(currentStaffId: staffId)),
           ),
         ),
+        // QR Ordering rows: Food & Beverage stores only (hidden outright for
+        // Retail / Hardware and General — see Store.supportsQrOrdering).
+        if (storeProvider.supportsQrOrdering) ...[
         _SettingsRow(
           icon: Icons.qr_code_2,
           label: 'Tables',
@@ -159,6 +162,7 @@ class SettingsPanel extends StatelessWidget {
             ),
           ),
         ),
+        ],
         _SettingsRow(
           icon: Icons.file_download_outlined,
           label: 'Export Data',

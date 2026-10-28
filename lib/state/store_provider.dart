@@ -56,6 +56,11 @@ class StoreProvider extends ChangeNotifier {
   /// never briefly unlocks the feature. See Store.canUseQrOrdering.
   bool get canUseQrOrdering => _store?.canUseQrOrdering ?? false;
 
+  /// Food & Beverage store — the only kind that shows QR Ordering at all
+  /// (see Store.supportsQrOrdering). False until the store has loaded, so
+  /// a retail store never flashes the QR entries.
+  bool get supportsQrOrdering => _store?.supportsQrOrdering ?? false;
+
   /// False until the store has loaded, matching every other flag on
   /// this provider — a slow/failed load must never make the discount
   /// option flash into view before the real (likely-off) value

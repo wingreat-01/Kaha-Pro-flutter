@@ -219,7 +219,7 @@ class TransactionProvider extends ChangeNotifier {
 
     _transactions
       ..clear()
-      ..addAll(rows.map<Transaction>((row) => _fromRow(row as Map<String, dynamic>)));
+      ..addAll(rows.map<Transaction>((row) => _fromRow(row)));
 
     // Re-show any still-unsynced local sales as PENDING placeholders —
     // otherwise they'd vanish from the Transactions tab the moment the

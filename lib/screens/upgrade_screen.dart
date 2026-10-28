@@ -485,6 +485,9 @@ class _PlanCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           for (final feature in plan.features)
+            // Don't sell QR ordering to a store type that can't use it
+            // (Store.supportsQrOrdering — Food & Beverage only).
+            if (feature != 'QR ordering' || context.watch<StoreProvider>().supportsQrOrdering)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(

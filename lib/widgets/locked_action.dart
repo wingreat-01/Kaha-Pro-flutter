@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/store_provider.dart';
+import '../state/store_provider.dart';
 
 /// Wraps any action widget (a button, a card, a whole panel) and locks
 /// it when the store's trial has expired: dims it and swallows taps,

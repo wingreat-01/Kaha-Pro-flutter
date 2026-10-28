@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/store_provider.dart';
-import '../theme/app_colors.dart'; // adjust path if your color constants live elsewhere
+import '../state/store_provider.dart';
+import '../theme/app_theme.dart';
 
 /// Persistent bar shown at the top of HomeShell (or wherever your main
 /// scaffold lives) when the store's plan is 'expired'. Not dismissible --
@@ -20,7 +20,7 @@ class TrialExpiredBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: AppColors.ledgerRed, // swap for your actual red constant if named differently
+      color: AppColors.ledgerRed,
       child: Row(
         children: [
           const Icon(Icons.error_outline, color: Colors.white, size: 18),

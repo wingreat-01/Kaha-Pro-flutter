@@ -197,12 +197,19 @@ class Store {
       plan == 'expired' ||
       (planExpiresAt != null && planExpiresAt!.isBefore(DateTime.now()));
 
-  /// QR Ordering (Tables, QR Menu, QR Order Payments, Incoming Orders)
-  /// is a Pro/Lifetime feature. The free trial mirrors Pro, so a store
+  /// QR Ordering (Tables, QR Menu, QR Order Payments, Incoming Orders) is
+  /// a restaurant/café feature: Retail / Hardware and General stores never
+  /// see it at all — not even as a locked upsell. Server-side twin:
+  /// store_has_qr_ordering() (20261028_030_qr_ordering_food_beverage_only.sql).
+  bool get supportsQrOrdering => businessType == 'food_beverage';
+
+  /// QR Ordering is a Pro/Lifetime feature of Food & Beverage stores
+  /// ([supportsQrOrdering]). The free trial mirrors Pro, so a store
   /// still inside its trial window gets it too; Starter, Basic and an
-  /// expired trial do not. UX gate only -- the real enforcement must also live
-  /// server-side (RLS / the order-submit function).
+  /// expired trial do not. UX gate only -- the real enforcement lives
+  /// server-side in store_has_qr_ordering().
   bool get canUseQrOrdering {
+    if (!supportsQrOrdering) return false;
     if (isExpired) return false;
     switch (plan) {
       case 'pro':
