@@ -114,7 +114,7 @@ const List<_PlanInfo> _kPlans = [
   _PlanInfo(
     id: 'lifetime',
     name: 'Lifetime',
-    monthlyPrice: '₱3,490',
+    monthlyPrice: '₱999',
     yearlyPrice: null,
     features: [
       'Everything in Pro, except the AI assistant',
@@ -212,7 +212,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         backgroundColor: AppColors.slate,
         title: Text('Buy Lifetime?', style: AppTextStyles.body(size: 16, weight: FontWeight.w700)),
         content: Text(
-          'You pay ₱3,490 once and keep access with no renewals. '
+          'You pay ₱999 once and keep access with no renewals. '
           'If you have an active Starter, Basic or Pro subscription, cancel it in Google Play so you are not billed twice.',
           style: AppTextStyles.body(size: 13, color: AppColors.textSecondary),
         ),
