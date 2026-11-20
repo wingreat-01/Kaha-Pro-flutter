@@ -34,6 +34,9 @@ class ProductCard extends StatefulWidget {
 }
 
 class _ProductCardState extends State<ProductCard> {
+  static const double _nameFontSize = 13.5;
+  static const double _nameLineHeight = 1.25;
+
   bool _pressed = false;
   bool _picking = false;
 
@@ -148,24 +151,30 @@ class _ProductCardState extends State<ProductCard> {
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
-                    height: 34, // fixed slot for up to 2 lines — keeps emoji/name/price
-                                // aligned at the same height on every card, regardless
-                                // of how long the product name is
-                    child: Center(
+                    // Room for up to 2 lines, so the price sits at the same
+                    // height on every card however long the name is. Sized
+                    // from the device's text scale (a fixed px height
+                    // clipped/misaligned on phones with larger system fonts).
+                    height: MediaQuery.textScalerOf(context).scale(_nameFontSize) * _nameLineHeight * 2,
+                    // Bottom-aligned, not centered: a one-line name sits right
+                    // above its price instead of floating mid-slot with a
+                    // blank line's worth of gap on each side.
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
                       child: Text(
                         product.name,
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.body(
-                          size: 13.5,
+                          size: _nameFontSize,
                           weight: FontWeight.w600,
                           color: AppColors.textPrimary,
-                        ),
+                        ).copyWith(height: _nameLineHeight),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Text(
                     _priceLabel(product),
                     style: AppTextStyles.mono(
